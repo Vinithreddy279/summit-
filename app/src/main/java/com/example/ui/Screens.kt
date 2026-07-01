@@ -39,6 +39,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.alpha
+import androidx.compose.material.icons.outlined.Explore
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Terrain
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Person
 import com.example.data.*
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
@@ -69,107 +76,10 @@ fun SummitApp(viewModel: SummitViewModel) {
 
             Scaffold(
                 bottomBar = {
-                    NavigationBar(
-                        containerColor = SlateCardSurface,
-                        tonalElevation = 0.dp,
-                        modifier = Modifier
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .drawBehind {
-                                // Top border line matching Design's dark theme border
-                                drawLine(
-                                    color = SlateCardSurfaceVariant,
-                                    start = Offset(0f, 0f),
-                                    end = Offset(size.width, 0f),
-                                    strokeWidth = 1.dp.toPx()
-                                )
-                            }
-                    ) {
-                        NavigationBarItem(
-                            selected = currentTab == SummitViewModel.Tab.DASHBOARD,
-                            onClick = { viewModel.setTab(SummitViewModel.Tab.DASHBOARD) },
-                            icon = { Icon(Icons.Filled.Dashboard, contentDescription = "Dashboard") },
-                            label = { Text("Home", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = NeonTealAccent,
-                                selectedTextColor = NeonTealAccent,
-                                indicatorColor = NeonTealMuted,
-                                unselectedIconColor = SlateTextSecondary,
-                                unselectedTextColor = SlateTextSecondary
-                            ),
-                            modifier = Modifier.testTag("nav_dashboard")
-                        )
-                        NavigationBarItem(
-                            selected = currentTab == SummitViewModel.Tab.SOCIAL_FEED,
-                            onClick = { viewModel.setTab(SummitViewModel.Tab.SOCIAL_FEED) },
-                            icon = { Icon(Icons.Filled.DynamicFeed, contentDescription = "Social Feed") },
-                            label = { Text("Feed", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = NeonTealAccent,
-                                selectedTextColor = NeonTealAccent,
-                                indicatorColor = NeonTealMuted,
-                                unselectedIconColor = SlateTextSecondary,
-                                unselectedTextColor = SlateTextSecondary
-                            ),
-                            modifier = Modifier.testTag("nav_feed")
-                        )
-                        NavigationBarItem(
-                            selected = currentTab == SummitViewModel.Tab.RECORD,
-                            onClick = { viewModel.setTab(SummitViewModel.Tab.RECORD) },
-                            icon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(OrangePrimary),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Filled.RadioButtonChecked,
-                                        contentDescription = "Record",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            },
-                            label = { Text("RECORD", fontSize = 9.sp, fontWeight = FontWeight.Black) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Color.White,
-                                selectedTextColor = OrangePrimary,
-                                indicatorColor = Color.Transparent,
-                                unselectedIconColor = Color.White,
-                                unselectedTextColor = SlateTextSecondary
-                            ),
-                            modifier = Modifier.testTag("nav_record")
-                        )
-                        NavigationBarItem(
-                            selected = currentTab == SummitViewModel.Tab.GEAR,
-                            onClick = { viewModel.setTab(SummitViewModel.Tab.GEAR) },
-                            icon = { Icon(Icons.Filled.DirectionsBike, contentDescription = "Gear") },
-                            label = { Text("Gear", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = NeonTealAccent,
-                                selectedTextColor = NeonTealAccent,
-                                indicatorColor = NeonTealMuted,
-                                unselectedIconColor = SlateTextSecondary,
-                                unselectedTextColor = SlateTextSecondary
-                            ),
-                            modifier = Modifier.testTag("nav_gear")
-                        )
-                        NavigationBarItem(
-                            selected = currentTab == SummitViewModel.Tab.SEGMENTS,
-                            onClick = { viewModel.setTab(SummitViewModel.Tab.SEGMENTS) },
-                            icon = { Icon(Icons.Filled.EmojiEvents, contentDescription = "Segments") },
-                            label = { Text("Segments", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = NeonTealAccent,
-                                selectedTextColor = NeonTealAccent,
-                                indicatorColor = NeonTealMuted,
-                                unselectedIconColor = SlateTextSecondary,
-                                unselectedTextColor = SlateTextSecondary
-                            ),
-                            modifier = Modifier.testTag("nav_segments")
-                        )
-                    }
+                    PremiumBottomBar(
+                        currentTab = currentTab,
+                        onTabSelected = { viewModel.setTab(it) }
+                    )
                 }
             ) { innerPadding ->
                 Box(
@@ -197,6 +107,146 @@ fun SummitApp(viewModel: SummitViewModel) {
 }
 
 // ============================================================================
+@Composable
+fun PremiumBottomBar(
+    currentTab: SummitViewModel.Tab,
+    onTabSelected: (SummitViewModel.Tab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(28.dp),
+                ambientColor = Color.Black.copy(alpha = 0.4f),
+                spotColor = Color.Black.copy(alpha = 0.5f)
+            ),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xEC111827)
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color(0x2EFFFFFF),
+                    Color(0x05FFFFFF)
+                )
+            )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 6.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val items = listOf(
+                Pair(SummitViewModel.Tab.DASHBOARD, "Explore" to Icons.Outlined.Explore),
+                Pair(SummitViewModel.Tab.RECORD, "Map" to Icons.Outlined.Map),
+                Pair(SummitViewModel.Tab.SEGMENTS, "Trips" to Icons.Outlined.Terrain),
+                Pair(SummitViewModel.Tab.SOCIAL_FEED, "Community" to Icons.Outlined.Groups),
+                Pair(SummitViewModel.Tab.GEAR, "Profile" to Icons.Outlined.Person)
+            )
+
+            val selectedIcons = mapOf(
+                SummitViewModel.Tab.DASHBOARD to Icons.Filled.Explore,
+                SummitViewModel.Tab.RECORD to Icons.Filled.Map,
+                SummitViewModel.Tab.SEGMENTS to Icons.Filled.Terrain,
+                SummitViewModel.Tab.SOCIAL_FEED to Icons.Filled.Groups,
+                SummitViewModel.Tab.GEAR to Icons.Filled.Person
+            )
+
+            val testTags = mapOf(
+                SummitViewModel.Tab.DASHBOARD to "nav_dashboard",
+                SummitViewModel.Tab.RECORD to "nav_record",
+                SummitViewModel.Tab.SEGMENTS to "nav_segments",
+                SummitViewModel.Tab.SOCIAL_FEED to "nav_feed",
+                SummitViewModel.Tab.GEAR to "nav_gear"
+            )
+
+            items.forEach { (tab, details) ->
+                val (label, icon) = details
+                val isSelected = currentTab == tab
+                val testTag = testTags[tab] ?: ""
+
+                val animatedScale by animateFloatAsState(
+                    targetValue = if (isSelected) 1.05f else 1.0f,
+                    animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+                    label = "scale"
+                )
+                val activeBgColor by animateColorAsState(
+                    targetValue = if (isSelected) OrangePrimary.copy(alpha = 0.15f) else Color.Transparent,
+                    animationSpec = tween(300),
+                    label = "bgColor"
+                )
+                val activeBorderColor by animateColorAsState(
+                    targetValue = if (isSelected) OrangePrimary.copy(alpha = 0.4f) else Color.Transparent,
+                    animationSpec = tween(300),
+                    label = "borderColor"
+                )
+                val iconColor by animateColorAsState(
+                    targetValue = if (isSelected) OrangePrimary else SlateTextSecondary,
+                    animationSpec = tween(250),
+                    label = "iconColor"
+                )
+                val textColor by animateColorAsState(
+                    targetValue = if (isSelected) Color.White else SlateTextSecondary,
+                    animationSpec = tween(250),
+                    label = "textColor"
+                )
+
+                Box(
+                    modifier = Modifier
+                        .scale(animatedScale)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(activeBgColor)
+                        .border(
+                            width = 1.dp,
+                            color = activeBorderColor,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .clickable { onTabSelected(tab) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .testTag(testTag),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isSelected) (selectedIcons[tab] ?: icon) else icon,
+                            contentDescription = label,
+                            tint = iconColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        AnimatedVisibility(
+                            visible = isSelected,
+                            enter = expandHorizontally(expandFrom = Alignment.Start) + fadeIn(),
+                            exit = shrinkHorizontally(shrinkTowards = Alignment.Start) + fadeOut()
+                        ) {
+                            Text(
+                                text = label,
+                                color = textColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                letterSpacing = 0.2.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // Screen 1: Dashboard (Stats & Progress summary)
 // ============================================================================
 @Composable
@@ -406,20 +456,28 @@ fun GlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier
+            .shadow(
+                elevation = 12.dp,
+                shape = RoundedCornerShape(24.dp),
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = 0.5f),
+                spotColor = Color.Black.copy(alpha = 0.6f)
+            ),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0x15FFFFFF), // White with 8% opacity for glass feel
+            containerColor = Color(0x11FFFFFF), // Translucent white for glass feel
         ),
         border = BorderStroke(
             width = 1.dp,
             brush = Brush.verticalGradient(
                 colors = listOf(
-                    Color(0x30FFFFFF),
-                    Color(0x05FFFFFF)
+                    Color(0x2EFFFFFF),
+                    Color(0x04FFFFFF)
                 )
             )
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier.padding(20.dp)
@@ -478,13 +536,24 @@ fun SplashScreen(viewModel: SummitViewModel) {
     var animStarted by remember { mutableStateOf(false) }
     val sunYOffset by animateFloatAsState(
         targetValue = if (animStarted) 0f else 150f,
-        animationSpec = tween(durationMillis = 1800, easing = EaseOutBack),
+        animationSpec = spring(
+            dampingRatio = 0.65f,
+            stiffness = Spring.StiffnessVeryLow
+        ),
         label = "sun_rise"
     )
     val logoScale by animateFloatAsState(
         targetValue = if (animStarted) 1f else 0.5f,
-        animationSpec = tween(durationMillis = 1500, easing = EaseOutBack),
+        animationSpec = spring(
+            dampingRatio = 0.65f,
+            stiffness = Spring.StiffnessLow
+        ),
         label = "logo_scale"
+    )
+    val fadeAlpha by animateFloatAsState(
+        targetValue = if (animStarted) 1f else 0f,
+        animationSpec = tween(durationMillis = 1200, easing = EaseInOut),
+        label = "fade_alpha"
     )
 
     LaunchedEffect(Unit) {
@@ -532,6 +601,7 @@ fun SplashScreen(viewModel: SummitViewModel) {
             modifier = Modifier
                 .padding(24.dp)
                 .scale(logoScale)
+                .alpha(fadeAlpha)
                 .drawBehind {
                     // Sunrise Glow Circle moving dynamically
                     drawCircle(
@@ -1359,19 +1429,10 @@ fun DashboardScreen(viewModel: SummitViewModel) {
         }
 
         item {
-            // S-Class Leveling Athlete Status Panel
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, OrangePrimary.copy(alpha = 0.5f), RoundedCornerShape(24.dp))
+            // S-Class Leveling Athlete Status Panel (Premium Glassmorphism Widget)
+            GlassCard(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
                     // Panel Header
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1587,7 +1648,6 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                         }
                     }
                 }
-            }
             Spacer(modifier = Modifier.height(24.dp))
         }
 
@@ -1619,14 +1679,9 @@ fun DashboardScreen(viewModel: SummitViewModel) {
 
         item {
             // Equipment Watch / Active Gear Section matching HTML
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA)),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, Color(0xFFE7E0EC), RoundedCornerShape(24.dp))
+            GlassCard(
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
                     // Header Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1637,20 +1692,20 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                             text = "ACTIVE GEAR",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF6750A4),
+                            color = OrangePrimary,
                             letterSpacing = 1.sp
                         )
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(100.dp))
-                                .background(Color(0xFFEADDFF))
+                                .background(OrangePrimary.copy(alpha = 0.15f))
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text(
                                 text = "${minOf(2, gears.size)} Active",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF6750A4)
+                                color = OrangePrimary
                             )
                         }
                     }
@@ -1669,12 +1724,12 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                         gears.take(2).forEachIndexed { index, gear ->
                             if (index > 0) {
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Divider(color = Color(0xFFE7E0EC), thickness = 1.dp)
+                                Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
                                 Spacer(modifier = Modifier.height(12.dp))
                             }
                             
                             val progress = (gear.currentMileageKm / gear.maxMileageKm).toFloat()
-                            val progressColor = Color(0xFF6750A4) // purple matching design HTML
+                            val progressColor = OrangePrimary
                             
                             Column(modifier = Modifier.fillMaxWidth()) {
                                 Row(
@@ -1705,7 +1760,7 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                                         Text(
                                             text = String.format("%.0f%% Lifespan", progress * 100),
                                             fontSize = 11.sp,
-                                            color = Color(0xFF6750A4),
+                                            color = OrangeSecondary,
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
@@ -1714,7 +1769,7 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                                 LinearProgressIndicator(
                                     progress = minOf(1.0f, progress),
                                     color = progressColor,
-                                    trackColor = Color(0xFFE6E1E5),
+                                    trackColor = SlateCardSurfaceVariant,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(6.dp)
@@ -1724,7 +1779,6 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                         }
                     }
                 }
-            }
         }
     }
 }
