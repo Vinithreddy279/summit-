@@ -1,0 +1,6 @@
+{
+  "name": "Summit",
+  "description": "A high-performance fitness-tracking and social network application featuring GPS activity recording, local segment matching, gear mileage tracking, and a customizable social feed with comments and kudos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

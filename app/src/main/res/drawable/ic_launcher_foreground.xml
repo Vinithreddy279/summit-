@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Glowing Sun Aura (Orange) -->
+    <path
+        android:fillColor="#35FF9100"
+        android:pathData="M 50,44 A 22,22 0 1,1 49.99,44 Z" />
+
+    <!-- Glowing Inner Sun (Creamy Light Yellow) -->
+    <path
+        android:fillColor="#FFFFE5"
+        android:pathData="M 50,44 A 14,14 0 1,1 49.99,44 Z" />
+
+    <!-- Blue Sky Orb directly above the central peak -->
+    <path
+        android:fillColor="#00D2FF"
+        android:pathData="M 50,28 A 3.2,3.2 0 1,1 49.99,28 Z" />
+
+    <!-- Atmospheric Wispy Clouds (Left) -->
+    <path
+        android:fillColor="#40FF9100"
+        android:pathData="M 5,34 Q 15,30 25,36 Q 32,30 40,34 Q 25,40 5,34 Z" />
+
+    <!-- Atmospheric Wispy Clouds (Right) -->
+    <path
+        android:fillColor="#30E64A19"
+        android:pathData="M 60,38 Q 72,34 84,40 Q 92,34 102,38 Q 84,45 60,38 Z" />
+
+    <!-- Left Background Mountain Peak -->
+    <path
+        android:fillColor="#151A26"
+        android:pathData="M 4,85 L 26,50 L 48,85 Z" />
+    <path
+        android:fillColor="#0D111A"
+        android:pathData="M 4,85 L 26,50 L 26,85 Z" /> <!-- Shadow Side -->
+
+    <!-- Right Background Mountain Peak -->
+    <path
+        android:fillColor="#12151F"
+        android:pathData="M 62,85 L 82,54 L 102,85 Z" />
+    <path
+        android:fillColor="#0A0C14"
+        android:pathData="M 82,54 L 102,85 L 82,85 Z" />
+
+    <!-- Central Majestic Mountain Peak -->
+    <!-- Highlight Side (Left/Center) -->
+    <path
+        android:fillColor="#1A2030"
+        android:pathData="M 18,85 L 50,34 L 50,85 Z" />
+    <!-- Shadow Side (Right) -->
+    <path
+        android:fillColor="#0E111B"
+        android:pathData="M 50,34 L 82,85 L 50,85 Z" />
+    <!-- Ridge Highlight (Warm Golden/Orange reflection) -->
+    <path
+        android:strokeColor="#FF9100"
+        android:strokeWidth="1.2"
+        android:strokeLineCap="round"
+        android:pathData="M 50,34 L 50,85" />
+
+    <!-- Winding Orange/Red Path curving up to the peak -->
+    <!-- Winding curve starting at (30, 90), curving to (54, 72), then to hiker's peak at (66, 50) -->
+    <path
+        android:fillColor="#FF4E00"
+        android:pathData="M 28,92 C 40,92 50,78 50,73 C 50,67 58,58 65,50 C 64,50 56,62 56,69 C 56,74 38,90 28,92 Z" />
+    <path
+        android:fillColor="#FFB300"
+        android:pathData="M 32,92 C 41,92 49,81 49,76 C 49,72 55,64 61,56 C 60,56 53,66 53,71 C 53,76 39,91 32,92 Z" /> <!-- Path Highlight -->
+
+    <!-- Hiker's Rock Peak / Foreground Hill (Right Side) -->
+    <!-- Solid, dark obsidian silhouette for high contrast -->
+    <path
+        android:fillColor="#07090F"
+        android:pathData="M 38,85 C 46,72 54,58 66,50 C 72,55 80,68 86,85 Z" />
+
+    <!-- Triumphant Hiker Silhouette on Top of Peak -->
+    <!-- Standing on (66, 50) -->
+    <!-- Head -->
+    <path
+        android:fillColor="#FF9100"
+        android:pathData="M 66,38 A 1.5,1.5 0 1,1 65.99,38 Z" />
+    <!-- Body & Backpack Silhouette -->
+    <path
+        android:fillColor="#07090F"
+        android:pathData="M 64.5,40 C 63.5,40 63,41 63,42 L 63,45 C 63,46 64,46.5 65,46.5 L 65,49 L 66,49 L 66,46.5 L 67,49 L 68,49 L 67.2,46.5 C 67.8,46.5 68.5,46 68.5,45 L 68.5,41 C 68.5,40 67.5,40 67,40 Z" />
+    <!-- Subtle bright orange outline to separate hiker from the dark peak and sun -->
+    <path
+        android:strokeColor="#FF5722"
+        android:strokeWidth="0.6"
+        android:pathData="M 64.5,40 L 64.5,46 M 67.5,40 L 67.5,46" />
+
+</vector>
