@@ -96,6 +96,15 @@ fun SummitApp(viewModel: SummitViewModel) {
                         SummitViewModel.Tab.SEGMENTS -> SegmentsScreen(viewModel)
                     }
 
+                    if (currentTab == SummitViewModel.Tab.DASHBOARD) {
+                        StartActivityFAB(
+                            onClick = { viewModel.setTab(SummitViewModel.Tab.RECORD) },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 20.dp, bottom = 20.dp)
+                        )
+                    }
+
                     // Comments Overlay Dialog
                     if (activeCommentsPostId != null) {
                         CommentsDialog(viewModel = viewModel)
@@ -1320,6 +1329,562 @@ fun ThemeOptionRow(
     }
 }
 
+data class TrailItem(
+    val name: String,
+    val distance: String,
+    val elevation: String,
+    val difficulty: String,
+    val difficultyColor: Color
+)
+
+@Composable
+fun AchievementBadge(
+    modifier: Modifier = Modifier,
+    badgeType: String, // "gold", "silver", "bronze", "platinum"
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isUnlocked: Boolean = true
+) {
+    val metallicGradient = when (badgeType.lowercase()) {
+        "gold" -> Brush.linearGradient(listOf(Color(0xFFFFF2A3), Color(0xFFE2A100), Color(0xFFFFFAEC), Color(0xFFB37400), Color(0xFFFFF2A3)))
+        "silver" -> Brush.linearGradient(listOf(Color(0xFFF0F0F0), Color(0xFF9E9E9E), Color(0xFFFFFFFF), Color(0xFF616161), Color(0xFFF0F0F0)))
+        "bronze" -> Brush.linearGradient(listOf(Color(0xFFE5A988), Color(0xFF8B4726), Color(0xFFFBECE5), Color(0xFF5F2B14), Color(0xFFE5A988)))
+        else -> Brush.linearGradient(listOf(Color(0xFFE5EDF6), Color(0xFF8CA0BA), Color(0xFFF8FAFC), Color(0xFF4A5A72), Color(0xFFE5EDF6)))
+    }
+
+    val glowColor = when (badgeType.lowercase()) {
+        "gold" -> Color(0xFFFFB300).copy(alpha = 0.25f)
+        "silver" -> Color(0xFFCFD8DC).copy(alpha = 0.2f)
+        "bronze" -> Color(0xFF8D6E63).copy(alpha = 0.2f)
+        else -> Color(0xFF80DEEA).copy(alpha = 0.25f)
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+        modifier = modifier
+            .padding(4.dp)
+            .alpha(if (isUnlocked) 1.0f else 0.45f)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .shadow(
+                    elevation = if (isUnlocked) 8.dp else 2.dp,
+                    shape = CircleShape,
+                    clip = false,
+                    ambientColor = glowColor,
+                    spotColor = glowColor
+                )
+                .background(Color(0xEE0F172A), CircleShape)
+                .border(width = 2.dp, brush = metallicGradient, shape = CircleShape)
+                .padding(12.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawBehind {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(Color.White.copy(alpha = 0.15f), Color.Transparent),
+                                center = Offset(size.width * 0.3f, size.height * 0.3f),
+                                radius = size.width * 0.5f
+                            )
+                        )
+                    }
+            )
+
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = if (isUnlocked) {
+                    when (badgeType.lowercase()) {
+                        "gold" -> Color(0xFFFFC857)
+                        "silver" -> Color(0xFFE2E8F0)
+                        "bronze" -> Color(0xFFD3A48C)
+                        else -> Color(0xFFE0F2FE)
+                    }
+                } else SlateTextSecondary,
+                modifier = Modifier.size(28.dp)
+            )
+
+            if (!isUnlocked) {
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .background(Color(0xAA000000), CircleShape)
+                        .align(Alignment.BottomEnd),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Locked",
+                        tint = Color.White,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = title,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isUnlocked) SlateTextPrimary else SlateTextSecondary,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = subtitle,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Normal,
+            color = SlateTextSecondary,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+fun WeatherWidget(modifier: Modifier = Modifier) {
+    GlassCard(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFFC857))
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "LIVE WEATHER REPORT",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFFC857),
+                        letterSpacing = 1.sp
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Chamonix Valley Peak",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    color = SlateTextPrimary
+                )
+                Text(
+                    text = "Clear sky • Perfect trail traction",
+                    fontSize = 12.sp,
+                    color = SlateTextSecondary,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Column(horizontalAlignment = Alignment.End) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.WbSunny,
+                        contentDescription = "Sunny Weather",
+                        tint = Color(0xFFFFC857),
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Text(
+                        text = "21°C",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Black,
+                        color = SlateTextPrimary
+                    )
+                }
+                Text(
+                    text = "Feels like 20°C",
+                    fontSize = 11.sp,
+                    color = SlateTextSecondary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.Speed, contentDescription = "Wind", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                Column {
+                    Text("Wind", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                    Text("12 km/h", fontSize = 12.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.Cloud, contentDescription = "Humidity", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                Column {
+                    Text("Humidity", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                    Text("45%", fontSize = 12.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.Thermostat, contentDescription = "UV index", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                Column {
+                    Text("UV Index", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                    Text("Very High", fontSize = 12.sp, color = Color(0xFFFFC857), fontWeight = FontWeight.Black)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RecentTripsCard(activities: List<com.example.data.Activity>, modifier: Modifier = Modifier) {
+    GlassCard(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "RECENT TRIPS & RUNS",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                color = OrangePrimary,
+                letterSpacing = 1.5.sp
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(OrangePrimary.copy(alpha = 0.15f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "${activities.size} TOTAL",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    color = OrangePrimary
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        if (activities.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.Terrain,
+                        contentDescription = "No Activities",
+                        tint = SlateTextSecondary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "No recorded trips yet.",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary
+                    )
+                    Text(
+                        text = "Tap Start Activity or Record to begin your first journey!",
+                        fontSize = 11.sp,
+                        color = SlateTextSecondary,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                activities.take(3).forEachIndexed { index, activity ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0x0AFFFFFF), RoundedCornerShape(16.dp))
+                            .border(1.dp, Color(0x10FFFFFF), RoundedCornerShape(16.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (activity.sportType == "run") Color(0x20FF5E00) else Color(0x2000A2FF)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (activity.sportType == "run") Icons.Default.DirectionsRun else Icons.Default.DirectionsBike,
+                                    contentDescription = activity.sportType,
+                                    tint = if (activity.sportType == "run") OrangePrimary else Color(0xFF00A2FF),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = activity.title,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = SlateTextPrimary
+                                )
+                                Text(
+                                    text = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).format(java.util.Date(activity.timestamp)),
+                                    fontSize = 10.sp,
+                                    color = SlateTextSecondary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.1f km", activity.distanceKm),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black,
+                                color = OrangePrimary
+                            )
+                            Text(
+                                text = String.format(java.util.Locale.US, "+%.0fm Elev", activity.elevationGainM),
+                                fontSize = 10.sp,
+                                color = SlateTextSecondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NearbyTrailsSection(modifier: Modifier = Modifier) {
+    val trails = listOf(
+        TrailItem("Summit Ridge Loop", "7.8 km", "1,240m", "Hard", Color(0xFFEF4444)),
+        TrailItem("Golden Hour Crest", "4.2 km", "380m", "Moderate", Color(0xFFF59E0B)),
+        TrailItem("Echo Lake Pass", "12.4 km", "850m", "Hard", Color(0xFFEF4444)),
+        TrailItem("Valley Vista Loop", "3.5 km", "120m", "Easy", Color(0xFF10B981))
+    )
+
+    GlassCard(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "NEARBY SCENIC TRAILS",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                color = OrangePrimary,
+                letterSpacing = 1.5.sp
+            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(100.dp))
+                    .background(OrangePrimary.copy(alpha = 0.15f))
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = "GPS verified",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    color = OrangePrimary
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            trails.forEach { trail ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x0AFFFFFF), RoundedCornerShape(16.dp))
+                        .border(1.dp, Color(0x10FFFFFF), RoundedCornerShape(16.dp))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0x2010B981)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Terrain,
+                                contentDescription = "Trail icon",
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = trail.name,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SlateTextPrimary
+                            )
+                            Text(
+                                text = "${trail.distance} • ${trail.elevation} gain",
+                                fontSize = 11.sp,
+                                color = SlateTextSecondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(trail.difficultyColor.copy(alpha = 0.15f))
+                            .border(1.dp, trail.difficultyColor.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = trail.difficulty,
+                            color = trail.difficultyColor,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AchievementsSection(modifier: Modifier = Modifier) {
+    GlassCard(modifier = modifier) {
+        Text(
+            text = "ATHLETIC ACHIEVEMENTS & MEDALS",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black,
+            color = OrangePrimary,
+            letterSpacing = 1.5.sp,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            AchievementBadge(
+                modifier = Modifier.weight(1f),
+                badgeType = "platinum",
+                title = "Apex Predator",
+                subtitle = "5000m altitude",
+                icon = Icons.Default.Terrain,
+                isUnlocked = true
+            )
+            AchievementBadge(
+                modifier = Modifier.weight(1f),
+                badgeType = "gold",
+                title = "Century Rider",
+                subtitle = "100km single trip",
+                icon = Icons.Default.DirectionsBike,
+                isUnlocked = true
+            )
+            AchievementBadge(
+                modifier = Modifier.weight(1f),
+                badgeType = "silver",
+                title = "Speed Demon",
+                subtitle = "Sub 4-min km pace",
+                icon = Icons.Default.DirectionsRun,
+                isUnlocked = true
+            )
+            AchievementBadge(
+                modifier = Modifier.weight(1f),
+                badgeType = "bronze",
+                title = "Early Riser",
+                subtitle = "5am daily streak",
+                icon = Icons.Default.WbSunny,
+                isUnlocked = false
+            )
+        }
+    }
+}
+
+@Composable
+fun StartActivityFAB(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isMounted by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        isMounted = true
+    }
+    val scale by animateFloatAsState(
+        targetValue = if (isMounted) 1.0f else 0.0f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "fab_scale"
+    )
+
+    FloatingActionButton(
+        onClick = onClick,
+        shape = CircleShape,
+        containerColor = Color.Transparent,
+        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 8.dp, pressedElevation = 12.dp),
+        modifier = modifier
+            .scale(scale)
+            .size(56.dp)
+            .shadow(
+                elevation = 8.dp,
+                shape = CircleShape,
+                ambientColor = OrangePrimary.copy(alpha = 0.4f),
+                spotColor = OrangePrimary.copy(alpha = 0.5f)
+            )
+            .background(
+                brush = Brush.linearGradient(
+                    colors = listOf(OrangePrimary, OrangeSecondary)
+                ),
+                shape = CircleShape
+            )
+            .border(width = 1.dp, color = Color.White.copy(alpha = 0.25f), shape = CircleShape)
+            .testTag("start_activity_fab")
+    ) {
+        Icon(
+            imageVector = Icons.Default.PlayArrow,
+            contentDescription = "Start Activity",
+            tint = Color.White,
+            modifier = Modifier.size(28.dp)
+        )
+    }
+}
+
 @Composable
 fun DashboardScreen(viewModel: SummitViewModel) {
     var showSettings by remember { mutableStateOf(false) }
@@ -1425,6 +1990,26 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        item {
+            WeatherWidget(modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        item {
+            RecentTripsCard(activities = activities, modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        item {
+            NearbyTrailsSection(modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        item {
+            AchievementsSection(modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -2240,6 +2825,31 @@ fun RichFeedPostCard(post: FeedPost, showStats: Boolean, onKudosClick: () -> Uni
                                 letterSpacing = 1.5.sp,
                                 textAlign = TextAlign.Center
                             )
+
+                            if (post.distanceKm != null && post.distanceKm >= 15.0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier
+                                        .background(Color(0x10FFD700), RoundedCornerShape(12.dp))
+                                        .border(1.dp, Color(0x30FFD700), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.EmojiEvents,
+                                        contentDescription = "Milestone Badge",
+                                        tint = Color(0xFFFFC857),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "EARNED APEX PREDATOR GOLD MEDAL!",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFFFFC857)
+                                    )
+                                }
+                            }
                             
                             if (post.content.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -2959,65 +3569,79 @@ fun GearScreen(viewModel: SummitViewModel) {
 
     var expandedGearId by remember { mutableStateOf<Int?>(null) }
 
-    Column(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "Gear Closet",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    color = SlateTextPrimary
-                )
-                Text(
-                    text = "Monitor total mileage on your sports gear.",
-                    fontSize = 13.sp,
-                    color = SlateTextSecondary
-                )
-            }
-            Button(
-                onClick = { showAddDialog = true },
-                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier.testTag("add_gear_button")
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Add, contentDescription = "Add gear", modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("ADD GEAR", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Column {
+                    Text(
+                        text = "Gear Closet",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Black,
+                        color = SlateTextPrimary
+                    )
+                    Text(
+                        text = "Monitor total mileage on your sports gear.",
+                        fontSize = 13.sp,
+                        color = SlateTextSecondary
+                    )
+                }
+                Button(
+                    onClick = { showAddDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.testTag("add_gear_button")
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Add, contentDescription = "Add gear", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("ADD GEAR", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        item {
+            AchievementsSection(modifier = Modifier.fillMaxWidth())
+        }
+
+        item {
+            Text(
+                text = "ACTIVE ATHLETE GEAR",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                color = OrangePrimary,
+                letterSpacing = 1.5.sp
+            )
+        }
 
         if (gears.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Filled.DirectionsRun, contentDescription = "No gear", tint = SlateTextSecondary, modifier = Modifier.size(48.dp))
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("No gear registered yet", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
-                    Text("Add your running shoes or bicycle to track mileage wear & tear automatically when you save workouts!", color = SlateTextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Filled.DirectionsRun, contentDescription = "No gear", tint = SlateTextSecondary, modifier = Modifier.size(48.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("No gear registered yet", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        Text("Add your running shoes or bicycle to track mileage wear & tear automatically when you save workouts!", color = SlateTextSecondary, fontSize = 13.sp, textAlign = TextAlign.Center)
+                    }
                 }
             }
         } else {
-            LazyColumn(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(gears) { gear ->
+            items(gears) { gear ->
                     val progress = (gear.currentMileageKm / gear.maxMileageKm).toFloat()
                     val thresholdFraction = gear.alertThresholdPercent / 100.0f
                     val isAlertTriggered = progress >= thresholdFraction
@@ -3411,7 +4035,6 @@ fun GearScreen(viewModel: SummitViewModel) {
                 }
             }
         }
-    }
 
     // Add Gear Dialog
     if (showAddDialog) {
