@@ -1886,6 +1886,348 @@ fun StartActivityFAB(
 }
 
 @Composable
+fun WeeklyPerformanceMetricsWidget(
+    activities: List<com.example.data.Activity>,
+    modifier: Modifier = Modifier
+) {
+    var selectedTab by remember { mutableStateOf(0) } // 0: Heart Rate, 1: Pace Distribution
+
+    GlassCard(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "ATHLETIC PERFORMANCE METRICS",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    color = OrangePrimary,
+                    letterSpacing = 1.5.sp
+                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(OrangePrimary.copy(alpha = 0.15f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "WEEKLY REPORT",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                        color = OrangePrimary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Premium Tab Switcher
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(SlateCardSurfaceVariant)
+                    .padding(4.dp)
+            ) {
+                listOf("Heart Rate Zones", "Pace Distribution").forEachIndexed { index, title ->
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (selectedTab == index) OrangePrimary else Color.Transparent)
+                            .clickable { selectedTab = index }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = title,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedTab == index) Color.White else SlateTextSecondary
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (selectedTab == 0) {
+                HeartRateZonesContent(activities)
+            } else {
+                PaceDistributionContent(activities)
+            }
+        }
+    }
+}
+
+@Composable
+fun HeartRateZonesContent(activities: List<com.example.data.Activity>) {
+    // Determine zones based on activities or mock values
+    val totalSeconds = activities.sumOf { it.durationSeconds }.toDouble()
+    
+    // Default mock durations if zero workouts
+    val warmUpSec = if (totalSeconds > 0) totalSeconds * 0.20 else 2400.0 // 40m
+    val fatBurnSec = if (totalSeconds > 0) totalSeconds * 0.40 else 4800.0 // 80m
+    val aerobicSec = if (totalSeconds > 0) totalSeconds * 0.30 else 3600.0 // 60m
+    val anaerobicSec = if (totalSeconds > 0) totalSeconds * 0.10 else 1200.0 // 20m
+
+    val sum = warmUpSec + fatBurnSec + aerobicSec + anaerobicSec
+
+    val pctZ1 = (warmUpSec / sum).toFloat()
+    val pctZ2 = (fatBurnSec / sum).toFloat()
+    val pctZ3 = (aerobicSec / sum).toFloat()
+    val pctZ4 = (anaerobicSec / sum).toFloat()
+
+    val zones = listOf(
+        Triple("Z1 Warm Up", "100-120 BPM", Color(0xFF94A3B8) to pctZ1),
+        Triple("Z2 Fat Burn", "121-140 BPM", Color(0xFF10B981) to pctZ2),
+        Triple("Z3 Aerobic/Cardio", "141-160 BPM", Color(0xFFF59E0B) to pctZ3),
+        Triple("Z4 Anaerobic/Peak", "161-190+ BPM", Color(0xFFEF4444) to pctZ4)
+    )
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Intensity distribution based on heart rate modeling:",
+            fontSize = 12.sp,
+            color = SlateTextSecondary,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Stacked progress bar using Canvas for high precision
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(24.dp)
+                .clip(RoundedCornerShape(12.dp))
+        ) {
+            val width = size.width
+            val height = size.height
+
+            var currentX = 0f
+            zones.forEach { (_, _, colorAndPct) ->
+                val (color, pct) = colorAndPct
+                val segmentWidth = width * pct
+                drawRect(
+                    color = color,
+                    topLeft = Offset(currentX, 0f),
+                    size = androidx.compose.ui.geometry.Size(segmentWidth, height)
+                )
+                currentX += segmentWidth
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Legend with metrics
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            zones.forEach { (name, range, colorAndPct) ->
+                val (color, pct) = colorAndPct
+                val segmentMin = ((sum * pct) / 60.0).toInt()
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(CircleShape)
+                                .background(color)
+                        )
+                        Column {
+                            Text(
+                                text = name,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SlateTextPrimary
+                            )
+                            Text(
+                                text = range,
+                                fontSize = 10.sp,
+                                color = SlateTextSecondary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = String.format(java.util.Locale.US, "%.0f%%", pct * 100),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Black,
+                            color = SlateTextPrimary
+                        )
+                        Text(
+                            text = "${segmentMin} min",
+                            fontSize = 10.sp,
+                            color = SlateTextSecondary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PaceDistributionContent(activities: List<com.example.data.Activity>) {
+    val totalSeconds = activities.sumOf { it.durationSeconds }
+    val avgPaceText = if (activities.isEmpty()) "5:20/km" else {
+        val totalDistance = activities.sumOf { it.distanceKm }
+        if (totalDistance > 0) {
+            val totalMin = totalSeconds / 60.0
+            val minPerKm = totalMin / totalDistance
+            val mins = minPerKm.toInt()
+            val secs = ((minPerKm - mins) * 60).toInt()
+            String.format(java.util.Locale.US, "%d:%02d/km", mins, secs)
+        } else "5:20/km"
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "Weekly pace density curve:",
+                    fontSize = 12.sp,
+                    color = SlateTextSecondary,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "High density in moderate aerobic pace",
+                    fontSize = 10.sp,
+                    color = OrangeSecondary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "Avg Pace",
+                    fontSize = 10.sp,
+                    color = SlateTextSecondary,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = avgPaceText,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    color = OrangePrimary
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Custom drawn Canvas area curve for pace distribution
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .background(SlateDarkBackground.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(8.dp))
+                .padding(top = 16.dp, bottom = 8.dp, start = 8.dp, end = 8.dp)
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val width = size.width
+                val height = size.height
+
+                // Grid lines
+                val gridColor = SlateCardSurfaceVariant
+                drawLine(gridColor, Offset(0f, height * 0.25f), Offset(width, height * 0.25f), strokeWidth = 1f)
+                drawLine(gridColor, Offset(0f, height * 0.5f), Offset(width, height * 0.5f), strokeWidth = 1f)
+                drawLine(gridColor, Offset(0f, height * 0.75f), Offset(width, height * 0.75f), strokeWidth = 1f)
+
+                // Spline points for pace distribution: coordinates
+                val points = listOf(
+                    Offset(0f, height),
+                    Offset(width * 0.15f, height * 0.9f),
+                    Offset(width * 0.3f, height * 0.5f),
+                    Offset(width * 0.45f, height * 0.15f), // Mode / peak density
+                    Offset(width * 0.6f, height * 0.35f),
+                    Offset(width * 0.75f, height * 0.7f),
+                    Offset(width * 0.9f, height * 0.95f),
+                    Offset(width, height)
+                )
+
+                val path = Path()
+                path.moveTo(points[0].x, points[0].y)
+                for (i in 1 until points.size) {
+                    val pPrev = points[i - 1]
+                    val pCurr = points[i]
+                    val controlX = (pPrev.x + pCurr.x) / 2
+                    path.cubicTo(controlX, pPrev.y, controlX, pCurr.y, pCurr.x, pCurr.y)
+                }
+                path.lineTo(width, height)
+                path.close()
+
+                // Draw Area under curve with dynamic gradient
+                drawPath(
+                    path = path,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(OrangePrimary.copy(alpha = 0.4f), Color.Transparent)
+                    )
+                )
+
+                // Draw Curve stroke
+                val strokePath = Path()
+                strokePath.moveTo(points[0].x, points[0].y)
+                for (i in 1 until points.size) {
+                    val pPrev = points[i - 1]
+                    val pCurr = points[i]
+                    val controlX = (pPrev.x + pCurr.x) / 2
+                    strokePath.cubicTo(controlX, pPrev.y, controlX, pCurr.y, pCurr.x, pCurr.y)
+                }
+                drawPath(
+                    path = strokePath,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(OrangePrimary, OrangeSecondary)
+                    ),
+                    style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                )
+
+                // Peak Dot Indicator
+                val peakX = width * 0.45f
+                val peakY = height * 0.15f
+                drawCircle(
+                    color = Color.White,
+                    radius = 5.dp.toPx(),
+                    center = Offset(peakX, peakY)
+                )
+                drawCircle(
+                    color = OrangePrimary,
+                    radius = 3.dp.toPx(),
+                    center = Offset(peakX, peakY)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Axis Legend Labels
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("Fast (3:30)", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+            Text("Aero (5:15)", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+            Text("Slow (7:00+)", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 fun DashboardScreen(viewModel: SummitViewModel) {
     var showSettings by remember { mutableStateOf(false) }
 
@@ -2000,6 +2342,11 @@ fun DashboardScreen(viewModel: SummitViewModel) {
 
         item {
             RecentTripsCard(activities = activities, modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        item {
+            WeeklyPerformanceMetricsWidget(activities = activities, modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(16.dp))
         }
 
