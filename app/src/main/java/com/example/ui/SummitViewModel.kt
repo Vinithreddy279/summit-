@@ -202,14 +202,25 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
             val restored = TrackingService.restoreActiveStateFromPrefs(getApplication())
             if (restored) {
                 if (TrackingService.isRecording.value && !TrackingService.isPaused.value) {
-                    val intent = Intent(getApplication(), TrackingService::class.java).apply {
-                        action = TrackingService.ACTION_START
-                        putExtra("IS_RESTORE", true)
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        getApplication<Application>().startForegroundService(intent)
+                    val isDemo = TrackingService.selectedSimulationRoute.value != null && TrackingService.selectedSimulationRoute.value != "None"
+                    val hasLocationPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                        getApplication(),
+                        android.Manifest.permission.ACCESS_FINE_LOCATION
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    
+                    if (isDemo || hasLocationPermission) {
+                        val intent = Intent(getApplication(), TrackingService::class.java).apply {
+                            action = TrackingService.ACTION_START
+                            putExtra("IS_RESTORE", true)
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            getApplication<Application>().startForegroundService(intent)
+                        } else {
+                            getApplication<Application>().startService(intent)
+                        }
                     } else {
-                        getApplication<Application>().startService(intent)
+                        // Permissions were lost or not granted, pause the restored recording
+                        TrackingService.isPaused.value = true
                     }
                 }
             }
@@ -651,6 +662,7 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     // Recording Actions
     fun setRecordingSportType(sport: String) {
         _recordingSportType.value = sport
+        TrackingService.currentSportType.value = sport
     }
 
     fun setRecordingGear(gearId: Int?) {
@@ -658,7 +670,9 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setSimulationRoute(route: String?) {
-        _selectedSimulationRoute.value = route
+        val finalRoute = if (com.example.BuildConfig.DEBUG) route else "None"
+        _selectedSimulationRoute.value = finalRoute
+        TrackingService.selectedSimulationRoute.value = finalRoute
     }
 
     fun startRecording() {

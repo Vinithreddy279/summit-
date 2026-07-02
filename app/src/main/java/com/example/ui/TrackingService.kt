@@ -155,8 +155,12 @@ class TrackingService : Service() {
         // Acquire WakeLock to maintain tracking when screen is off
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-            wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Summit::TrackingWakeLock").apply {
-                acquire()
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.WAKE_LOCK) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Summit::TrackingWakeLock").apply {
+                    acquire(10 * 60 * 1000L) // 10 minutes timeout
+                }
+            } else {
+                android.util.Log.w("TrackingService", "WAKE_LOCK permission not granted; skipping acquire")
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -176,6 +180,28 @@ class TrackingService : Service() {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+
+        // Dynamically observe simulation route changes to support immediate mode switching
+        serviceScope.launch {
+            selectedSimulationRoute.collect { route ->
+                if (isRecording.value) {
+                    val isDemo = route != null && route != "None"
+                    if (isDemo) {
+                        // Disable real GPS completely and reset simulator index
+                        removeLocationUpdates()
+                        lastLocation = null
+                        simulationIndex = 0
+                    } else {
+                        // Disable simulator completely and use only real GPS
+                        removeLocationUpdates()
+                        if (!isPaused.value && !isAutoPaused.value) {
+                            startLocationUpdates()
+                        }
+                    }
+                    saveActiveStateToPrefs()
+                }
             }
         }
     }
@@ -300,6 +326,11 @@ class TrackingService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            android.util.Log.e("TrackingService", "Location permissions not granted; cannot request location updates")
+            return
+        }
         try {
             val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L).apply {
                 setMinUpdateIntervalMillis(1000L)

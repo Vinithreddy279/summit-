@@ -3865,11 +3865,24 @@ fun RecordScreen(viewModel: SummitViewModel) {
     var gpsFixState by remember { mutableStateOf<android.location.Location?>(null) }
     var isCheckingGps by remember { mutableStateOf(false) }
 
-    LaunchedEffect(selectedSimulationRoute, permissionState.allPermissionsGranted) {
-        if (selectedSimulationRoute == "None" || selectedSimulationRoute == null) {
+    DisposableEffect(selectedSimulationRoute, permissionState.allPermissionsGranted, isRecording) {
+        var callback: com.google.android.gms.location.LocationCallback? = null
+        val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+        
+        if (!isRecording && (selectedSimulationRoute == "None" || selectedSimulationRoute == null)) {
             if (permissionState.allPermissionsGranted) {
                 isCheckingGps = true
-                val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+                
+                callback = object : com.google.android.gms.location.LocationCallback() {
+                    override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                        val lastLoc = result.lastLocation
+                        if (lastLoc != null) {
+                            gpsFixState = lastLoc
+                            isCheckingGps = false
+                        }
+                    }
+                }
+                
                 try {
                     fusedClient.lastLocation.addOnSuccessListener { loc ->
                         if (loc != null && (System.currentTimeMillis() - loc.time) < 60000) {
@@ -3882,17 +3895,6 @@ fun RecordScreen(viewModel: SummitViewModel) {
                         com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
                         2000L
                     ).build()
-                    
-                    val callback = object : com.google.android.gms.location.LocationCallback() {
-                        override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-                            val lastLoc = result.lastLocation
-                            if (lastLoc != null) {
-                                gpsFixState = lastLoc
-                                isCheckingGps = false
-                                fusedClient.removeLocationUpdates(this)
-                            }
-                        }
-                    }
                     
                     fusedClient.requestLocationUpdates(
                         locationRequest,
@@ -3909,6 +3911,16 @@ fun RecordScreen(viewModel: SummitViewModel) {
         } else {
             gpsFixState = null
             isCheckingGps = false
+        }
+        
+        onDispose {
+            callback?.let {
+                try {
+                    fusedClient.removeLocationUpdates(it)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
 
@@ -4361,7 +4373,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isDemo) "Demo Mode Active" else "Live GPS Active",
+                            text = if (isDemo) "🟠 DEMO MODE" else "🟢 LIVE GPS",
                             color = if (isDemo) Color(0xFFFFA726) else Color(0xFF66BB6A),
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
@@ -7123,6 +7135,11 @@ fun ActivityDetailDialog(
                                 fontWeight = FontWeight.SemiBold,
                                 color = SlateTextPrimary
                             )
+                            Text(
+                                text = "Started at " + SimpleDateFormat("h:mm a", Locale.US).format(Date(activity.timestamp)),
+                                fontSize = 11.sp,
+                                color = SlateTextSecondary
+                            )
                         }
                     }
 
@@ -7160,32 +7177,34 @@ fun ActivityDetailDialog(
                 Divider(color = SlateCardSurfaceVariant)
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // Quick Stats summary in Header
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    val distVal = if (useImperial) activity.distanceKm * 0.621371 else activity.distanceKm
+                    Column {
+                        Text("DISTANCE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                        Text(String.format(Locale.US, "%.2f %s", distVal, if (useImperial) "mi" else "km"), fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                    }
+                    Column {
+                        Text("DURATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                        Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                    }
+                    Column {
+                        Text("CALORIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                        Text("$estCalories kcal", fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Column(
                     modifier = Modifier
                         .weight(1f)
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Quick Stats Header Summary
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("DISTANCE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                            val distVal = if (useImperial) activity.distanceKm * 0.621371 else activity.distanceKm
-                            Text(String.format(Locale.US, "%.2f %s", distVal, if (useImperial) "mi" else "km"), fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                        }
-                        Column {
-                            Text("DURATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                            Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                        }
-                        Column {
-                            Text("CALORIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                            Text("$estCalories kcal", fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                        }
-                    }
-
                     // Map Section
                     Text("ROUTE MAP", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                     PremiumOSMMapView(
@@ -7264,117 +7283,88 @@ fun ActivityDetailDialog(
                     val speedUnit = if (useImperial) "mph" else "km/h"
                     val avgSpeedVal = if (useImperial) activity.avgSpeedKmh * 0.621371 else activity.avgSpeedKmh
                     val maxSpeedVal = if (useImperial) activity.maxSpeedKmh * 0.621371 else activity.maxSpeedKmh
-                    val elevVal = if (useImperial) activity.elevationGainM * 3.28084 else activity.elevationGainM
                     val elevUnit = if (useImperial) "ft" else "m"
 
+                    val elevationStats = remember(points) {
+                        var gain = 0.0
+                        var loss = 0.0
+                        for (i in 1 until points.size) {
+                            val diff = points[i].elevation - points[i-1].elevation
+                            if (diff > 0) {
+                                gain += diff
+                            } else {
+                                loss += -diff
+                            }
+                        }
+                        Pair(gain, loss)
+                    }
+                    val finalElevationGain = if (elevationStats.first > 0.0) elevationStats.first else activity.elevationGainM
+                    val finalElevationLoss = elevationStats.second
+
+                    val statCards = remember(activity, points, useImperial, finalElevationGain, finalElevationLoss) {
+                        val list = mutableListOf<Pair<String, String>>()
+                        
+                        list.add(Pair("AVERAGE PACE", avgPaceStr))
+                        list.add(Pair("AVERAGE SPEED", String.format(Locale.US, "%.1f %s", avgSpeedVal, speedUnit)))
+                        list.add(Pair("MAXIMUM SPEED", String.format(Locale.US, "%.1f %s", maxSpeedVal, speedUnit)))
+                        list.add(Pair("MOVING TIME", formatElapsedTimeShort(activity.durationSeconds)))
+                        list.add(Pair("ELAPSED TIME", formatElapsedTimeShort((activity.durationSeconds * 1.05).toLong())))
+                        
+                        if (points.isNotEmpty()) {
+                            list.add(Pair("GPS ACCURACY", "High (3m)"))
+                        }
+                        
+                        if (finalElevationGain > 0.0) {
+                            val elevGainVal = if (useImperial) finalElevationGain * 3.28084 else finalElevationGain
+                            list.add(Pair("ELEVATION GAIN", String.format(Locale.US, "+%.0f %s", elevGainVal, elevUnit)))
+                        }
+                        
+                        if (finalElevationLoss > 0.0) {
+                            val elevLossVal = if (useImperial) finalElevationLoss * 3.28084 else finalElevationLoss
+                            list.add(Pair("ELEVATION LOSS", String.format(Locale.US, "-%.0f %s", elevLossVal, elevUnit)))
+                        }
+                        
+                        list
+                    }
+
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Average Pace
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("AVERAGE PACE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text(avgPaceStr, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        for (i in statCards.indices step 2) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(statCards[i].first, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                        Text(statCards[i].second, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                    }
                                 }
-                            }
-                            // Average Speed
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("AVERAGE SPEED", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text(String.format(Locale.US, "%.1f %s", avgSpeedVal, speedUnit), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                                }
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Max Speed
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("MAXIMUM SPEED", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text(String.format(Locale.US, "%.1f %s", maxSpeedVal, speedUnit), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                                }
-                            }
-                            // Moving Time
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("MOVING TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                                }
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Elapsed Time
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("ELAPSED TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text(formatElapsedTimeShort((activity.durationSeconds * 1.05).toLong()), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                                }
-                            }
-                            // Elevation Gain
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("ELEVATION GAIN", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text(String.format(Locale.US, "+%.0f %s", elevVal, elevUnit), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                                }
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // Calories
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("CALORIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text("$estCalories kcal", fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                                }
-                            }
-                            // GPS Accuracy
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text("GPS ACCURACY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                    Text(if (points.size > 2) "High (3m)" else "Estimated", fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                
+                                if (i + 1 < statCards.size) {
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                        shape = RoundedCornerShape(12.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Text(statCards[i + 1].first, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                            Text(statCards[i + 1].second, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                        }
+                                    }
+                                } else {
+                                    Spacer(modifier = Modifier.weight(1f))
                                 }
                             }
                         }
                     }
 
                     // Splits Section
-                    Text("1 ${if (useImperial) "MILE" else "KM"} SPLITS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                     val splits = remember(points, useImperial) {
                         calculateActivitySplits(points, useImperial)
                     }
                     if (splits.isNotEmpty()) {
+                        Text("1 ${if (useImperial) "MILE" else "KM"} SPLITS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                         Card(
                             colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant.copy(alpha = 0.3f)),
                             shape = RoundedCornerShape(16.dp),
@@ -7446,13 +7436,11 @@ fun ActivityDetailDialog(
                                 }
                             }
                         }
-                    } else {
-                        Text("No splits available.", color = SlateTextSecondary, fontSize = 12.sp)
                     }
 
                     // Interactive Performance Graphs
-                    Text("PERFORMANCE ANALYSIS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                     if (points.size >= 2) {
+                        Text("PERFORMANCE ANALYSIS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                         val elapsedTimes = points.map { ((it.timeMs - points.first().timeMs) / 1000.0) }
                         val speeds = points.map {
                             if (useImperial) it.speedMps * 2.23694 else it.speedMps * 3.6
@@ -7470,7 +7458,7 @@ fun ActivityDetailDialog(
                             val list = mutableListOf<Double>()
                             list.add(0.0)
                             for (i in 1 until points.size) {
-                                val d = SegmentMatcher.haversineM(
+                                val d = com.example.data.SegmentMatcher.haversineM(
                                     Pair(points[i-1].lat, points[i-1].lng),
                                     Pair(points[i].lat, points[i].lng)
                                 )
@@ -7536,11 +7524,9 @@ fun ActivityDetailDialog(
                                 )
                             }
                         }
-                    } else {
-                        Text("No chart data available.", color = SlateTextSecondary, fontSize = 12.sp)
                     }
 
-                    // Share Activity
+                    // Export & Share Section
                     Text("EXPORT & SHARE", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
