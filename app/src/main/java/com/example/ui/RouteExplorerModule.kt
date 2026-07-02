@@ -230,7 +230,7 @@ object RouteExporter {
     private fun shareFile(context: Context, file: File, mimeType: String, chooserTitle: String) {
         val uri = androidx.core.content.FileProvider.getUriForFile(
             context,
-            "${context.packageName}.provider",
+            "${context.packageName}.fileprovider",
             file
         )
         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {

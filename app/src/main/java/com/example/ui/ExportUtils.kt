@@ -112,7 +112,7 @@ object ExportUtils {
     }
 
     private fun shareFile(context: Context, file: File, mimeType: String, chooserTitle: String) {
-        val uri = FileProvider.getUriForFile(context, "com.example.fileprovider", file)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
