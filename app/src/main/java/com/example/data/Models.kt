@@ -33,7 +33,8 @@ data class Activity(
     val routePointsJson: String, // List of GPS points: [{"lat":..., "lng":..., "ts":...}]
     val kudosCount: Int = 0,
     val isKudosedByMe: Boolean = false,
-    val notes: String = ""
+    val notes: String = "",
+    val privacy: String = "Public" // "Public", "Friends Only", "Private"
 ) : Serializable
 
 @Entity(tableName = "segments")
@@ -82,7 +83,8 @@ data class FeedPost(
     val commentsCount: Int = 0,
     val isKudosedByMe: Boolean = false,
     val timestamp: Long = System.currentTimeMillis(),
-    val imageUrl: String? = null // local drawable resource name or generic illustration
+    val imageUrl: String? = null, // local drawable resource name or generic illustration
+    val privacy: String = "Public" // "Public", "Friends Only", "Private"
 ) : Serializable
 
 @Entity(tableName = "feed_comments")

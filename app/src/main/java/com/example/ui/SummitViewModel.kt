@@ -13,6 +13,33 @@ import kotlin.random.Random
 class SummitViewModel(application: Application) : AndroidViewModel(application) {
     private val db = AppDatabase.getDatabase(application)
     val repository = SummitRepository(db)
+    val sessionManager = SessionManager(application)
+
+    // Offline Authentication & Settings flows
+    val isLoggedIn: StateFlow<Boolean> = sessionManager.isLoggedInFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val loggedInUserEmail: StateFlow<String?> = sessionManager.userEmailFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val loggedInUser: StateFlow<User?> = loggedInUserEmail
+        .flatMapLatest { email ->
+            if (email != null) repository.observeUserByEmail(email) else flowOf(null)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val useImperial: StateFlow<Boolean> = sessionManager.useImperialFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val autoPauseSetting: StateFlow<Boolean> = sessionManager.autoPauseFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val gpsAccuracyMeters: StateFlow<Int> = sessionManager.gpsAccuracyThresholdFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 10)
+
+    val appDarkMode: StateFlow<Boolean?> = sessionManager.darkModeFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     // UI States
     private val _currentTab = MutableStateFlow(Tab.DASHBOARD)
@@ -28,6 +55,13 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _appFlow = MutableStateFlow(AppFlow.SPLASH)
     val appFlow: StateFlow<AppFlow> = _appFlow.asStateFlow()
+
+    private val _selectedActivity = MutableStateFlow<Activity?>(null)
+    val selectedActivity: StateFlow<Activity?> = _selectedActivity.asStateFlow()
+
+    fun selectActivity(activity: Activity?) {
+        _selectedActivity.value = activity
+    }
 
     fun setAppFlow(flow: AppFlow) {
         _appFlow.value = flow
@@ -106,17 +140,84 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     private val _selectedSimulationRoute = MutableStateFlow<String?>("None")
     val selectedSimulationRoute: StateFlow<String?> = _selectedSimulationRoute.asStateFlow()
 
+    // In-App Toast Alert state
+    data class InAppAlert(val title: String, val message: String, val icon: String = "🔔")
+    private val _inAppAlert = MutableStateFlow<InAppAlert?>(null)
+    val inAppAlert: StateFlow<InAppAlert?> = _inAppAlert.asStateFlow()
+
+    fun triggerNotification(title: String, message: String, icon: String = "🔔") {
+        try {
+            NotificationHelper.showNotification(getApplication(), title, message)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        viewModelScope.launch {
+            _inAppAlert.value = InAppAlert(title, message, icon)
+            delay(3500)
+            if (_inAppAlert.value?.title == title && _inAppAlert.value?.message == message) {
+                _inAppAlert.value = null
+            }
+        }
+    }
+
+    fun dismissInAppAlert() {
+        _inAppAlert.value = null
+    }
+
     // Temporary variables for recording simulation
     private var recordingJob: Job? = null
     private var simulationIndex = 0
     private var simulatedCoordinates = emptyList<Pair<Double, Double>>()
 
     init {
+        // Restore session status & settings
+        viewModelScope.launch {
+            sessionManager.isLoggedInFlow.collect { loggedIn ->
+                if (loggedIn) {
+                    _appFlow.value = AppFlow.MAIN
+                }
+            }
+        }
+        viewModelScope.launch {
+            sessionManager.darkModeFlow.collect { dark ->
+                if (dark != null) {
+                    _themeMode.value = if (dark) "dark" else "light"
+                }
+            }
+        }
+
         // Seed initial data if segments are empty
         viewModelScope.launch {
             val existingSegments = repository.segments.first()
             if (existingSegments.isEmpty()) {
                 seedDatabase()
+            }
+        }
+
+        // Sync with TrackingService companion flows
+        viewModelScope.launch {
+            TrackingService.isRecording.collect {
+                _isRecording.value = it
+            }
+        }
+        viewModelScope.launch {
+            TrackingService.durationSeconds.collect {
+                _recordingDurationSeconds.value = it
+            }
+        }
+        viewModelScope.launch {
+            TrackingService.distanceKm.collect {
+                _recordingDistanceKm.value = it
+            }
+        }
+        viewModelScope.launch {
+            TrackingService.trackpoints.collect {
+                _recordingTrackpoints.value = it
+            }
+        }
+        viewModelScope.launch {
+            TrackingService.selectedSimulationRoute.collect {
+                _selectedSimulationRoute.value = it
             }
         }
     }
@@ -342,6 +443,15 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     fun toggleKudos(postId: Long) {
         viewModelScope.launch {
             repository.toggleKudos(postId)
+            val posts = feedPosts.value
+            val post = posts.find { it.id == postId }
+            if (post != null) {
+                if (post.userName == "You") {
+                    triggerNotification("Kudos Received! 👍", "An athlete gave kudos to your post: '${post.title}'")
+                } else {
+                    triggerNotification("Kudos Given! 👍", "You gave kudos on ${post.userName}'s post.")
+                }
+            }
         }
     }
 
@@ -381,6 +491,11 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
                 repository.insertFeedPost(
                     post.copy(commentsCount = post.commentsCount + 1)
                 )
+                if (post.userName == "You") {
+                    triggerNotification("Comment Posted 💬", "You commented on your own post: '$text'")
+                } else {
+                    triggerNotification("Comment Sent 💬", "You commented on ${post.userName}'s post.")
+                }
             }
 
             _newCommentText.value = ""
@@ -389,7 +504,7 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
 
     fun insertCustomPost(title: String, content: String) {
         viewModelScope.launch {
-            repository.insertFeedPost(
+            val postId = repository.insertFeedPost(
                 FeedPost(
                     userName = "You",
                     userAvatar = "avatar_you",
@@ -398,6 +513,88 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
                     timestamp = System.currentTimeMillis()
                 )
             )
+            triggerNotification("Post Published 📣", "Your post '$title' is now live on the feed!")
+            simulateSocialInteractionsForPost(postId, title)
+        }
+    }
+
+    private fun simulateSocialInteractionsForPost(postId: Long, postTitle: String) {
+        viewModelScope.launch {
+            // After 5s, Sarah Chen gives a Kudos
+            delay(5000)
+            val posts = feedPosts.value
+            val userPost = posts.find { it.id == postId && it.userName == "You" }
+            if (userPost != null) {
+                repository.insertFeedPost(
+                    userPost.copy(kudosCount = userPost.kudosCount + 1)
+                )
+                triggerNotification(
+                    "Kudos Received! 👍",
+                    "Sarah Chen gave you kudos on your post: '$postTitle'"
+                )
+            }
+
+            // After another 5s, Alex Mercer leaves a comment
+            delay(5000)
+            val posts2 = feedPosts.value
+            val userPost2 = posts2.find { it.id == postId && it.userName == "You" }
+            if (userPost2 != null) {
+                repository.insertComment(
+                    FeedComment(
+                        postId = postId,
+                        userName = "Alex Mercer",
+                        userAvatar = "avatar_2",
+                        commentText = "Outstanding! Keep up the brilliant updates! 🚀"
+                    )
+                )
+                repository.insertFeedPost(
+                    userPost2.copy(commentsCount = userPost2.commentsCount + 1)
+                )
+                triggerNotification(
+                    "New Comment! 💬",
+                    "Alex Mercer commented on your post: 'Outstanding! Keep up...'"
+                )
+            }
+        }
+    }
+
+    fun simulateSocialInteractionsForActivity(activityId: Long, activityTitle: String) {
+        viewModelScope.launch {
+            // After 5s, Sarah Chen gives a Kudos
+            delay(5000)
+            val posts = feedPosts.value
+            val userPost = posts.find { it.activityId == activityId && it.userName == "You" }
+            if (userPost != null) {
+                repository.insertFeedPost(
+                    userPost.copy(kudosCount = userPost.kudosCount + 1)
+                )
+                triggerNotification(
+                    "Kudos Received! 👍",
+                    "Sarah Chen gave you kudos on your activity: '$activityTitle'"
+                )
+            }
+
+            // After another 5s, Markus Vance leaves a comment
+            delay(5000)
+            val posts2 = feedPosts.value
+            val userPost2 = posts2.find { it.activityId == activityId && it.userName == "You" }
+            if (userPost2 != null) {
+                repository.insertComment(
+                    FeedComment(
+                        postId = userPost2.id,
+                        userName = "Markus Vance",
+                        userAvatar = "avatar_3",
+                        commentText = "Sensational pace on this run! Absolute inspiration. 🔥"
+                    )
+                )
+                repository.insertFeedPost(
+                    userPost2.copy(commentsCount = userPost2.commentsCount + 1)
+                )
+                triggerNotification(
+                    "New Comment! 💬",
+                    "Markus Vance commented on your activity: 'Sensational pace on this...'"
+                )
+            }
         }
     }
 
@@ -444,152 +641,24 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun startRecording() {
-        _isRecording.value = true
-        _recordingDurationSeconds.value = 0L
-        _recordingDistanceKm.value = 0.0
-        _recordingTrackpoints.value = emptyList()
-        simulationIndex = 0
-
-        // Prepare simulation points if a route is selected
-        val routeName = _selectedSimulationRoute.value
-        if (routeName != null && routeName != "None") {
-            simulatedCoordinates = when (routeName) {
-                "Twin Peaks Hill Climb" -> listOf(
-                    Pair(37.7510, -122.4430),
-                    Pair(37.7514, -122.4434),
-                    Pair(37.7518, -122.4438),
-                    Pair(37.7522, -122.4442),
-                    Pair(37.7525, -122.4445),
-                    Pair(37.7529, -122.4449),
-                    Pair(37.7533, -122.4453),
-                    Pair(37.7538, -122.4458),
-                    Pair(37.7541, -122.4461),
-                    Pair(37.7545, -122.4465)
-                )
-                "Golden Gate Bridge Crossing" -> listOf(
-                    Pair(37.8110, -122.4770),
-                    Pair(37.8122, -122.4771),
-                    Pair(37.8134, -122.4774),
-                    Pair(37.8146, -122.4776),
-                    Pair(37.8158, -122.4778),
-                    Pair(37.8170, -122.4780),
-                    Pair(37.8182, -122.4781),
-                    Pair(37.8194, -122.4783),
-                    Pair(37.8206, -122.4784),
-                    Pair(37.8220, -122.4786)
-                )
-                "Presidio Loop Cycle" -> listOf(
-                    Pair(37.7980, -122.4660),
-                    Pair(37.7992, -122.4666),
-                    Pair(37.8005, -122.4672),
-                    Pair(37.8018, -122.4678),
-                    Pair(37.8030, -122.4685),
-                    Pair(37.8042, -122.4690),
-                    Pair(37.8055, -122.4695)
-                )
-                "Hawk Hill Peak Climb" -> listOf(
-                    Pair(37.8280, -122.4820),
-                    Pair(37.8288, -122.4835),
-                    Pair(37.8300, -122.4860),
-                    Pair(37.8310, -122.4890),
-                    Pair(37.8320, -122.4920),
-                    Pair(37.8330, -122.4960),
-                    Pair(37.8335, -122.4990)
-                )
-                else -> emptyList()
-            }
-        } else {
-            simulatedCoordinates = emptyList()
-        }
-
-        recordingJob = viewModelScope.launch {
-            val rand = Random(42)
-            while (_isRecording.value) {
-                delay(1000)
-                _recordingDurationSeconds.value += 1
-
-                val currentPoints = _recordingTrackpoints.value.toMutableList()
-                val paceMps = if (_recordingSportType.value == "ride") 6.5 else 3.5
-
-                if (simulatedCoordinates.isNotEmpty()) {
-                    // Simulating step-by-step
-                    if (simulationIndex < simulatedCoordinates.size) {
-                        val baseCoord = simulatedCoordinates[simulationIndex]
-                        // Add tiny GPS drift/noise
-                        val noiseLat = rand.nextDouble(-0.00002, 0.00002)
-                        val noiseLng = rand.nextDouble(-0.00002, 0.00002)
-                        val finalCoord = Pair(baseCoord.first + noiseLat, baseCoord.second + noiseLng)
-
-                        val currentPoint = GPSPoint(
-                            lat = finalCoord.first,
-                            lng = finalCoord.second,
-                            elevation = 12.0 + (simulationIndex * 4.5), // simulated climb
-                            timeMs = System.currentTimeMillis(),
-                            speedMps = paceMps + rand.nextDouble(-0.5, 0.5)
-                        )
-
-                        if (currentPoints.isNotEmpty()) {
-                            val prev = currentPoints.last()
-                            val stepDist = SegmentMatcher.haversineM(prev.latlng, currentPoint.latlng)
-                            _recordingDistanceKm.value += (stepDist / 1000.0)
-                        }
-
-                        currentPoints.add(currentPoint)
-                        _recordingTrackpoints.value = currentPoints
-                        simulationIndex++
-                    } else {
-                        // Loop back or hold at end of simulation route
-                        val baseCoord = simulatedCoordinates.last()
-                        val noiseLat = rand.nextDouble(-0.00002, 0.00002)
-                        val noiseLng = rand.nextDouble(-0.00002, 0.00002)
-                        val finalCoord = Pair(baseCoord.first + noiseLat, baseCoord.second + noiseLng)
-
-                        val currentPoint = GPSPoint(
-                            lat = finalCoord.first,
-                            lng = finalCoord.second,
-                            elevation = 12.0 + (simulatedCoordinates.size * 4.5),
-                            timeMs = System.currentTimeMillis(),
-                            speedMps = 0.0
-                        )
-                        currentPoints.add(currentPoint)
-                        _recordingTrackpoints.value = currentPoints
-                    }
-                } else {
-                    // Manual dynamic tracker (for live demo walking) - we generate some artificial walk step in SF
-                    val baseLat = 37.7749
-                    val baseLng = -122.4194
-                    val size = currentPoints.size
-                    val movement = size * 0.0001
-                    val finalCoord = Pair(baseLat + movement, baseLng + movement)
-
-                    val currentPoint = GPSPoint(
-                        lat = finalCoord.first,
-                        lng = finalCoord.second,
-                        elevation = 5.0,
-                        timeMs = System.currentTimeMillis(),
-                        speedMps = paceMps
-                    )
-
-                    if (currentPoints.isNotEmpty()) {
-                        val prev = currentPoints.last()
-                        val stepDist = SegmentMatcher.haversineM(prev.latlng, currentPoint.latlng)
-                        _recordingDistanceKm.value += (stepDist / 1000.0)
-                    }
-
-                    currentPoints.add(currentPoint)
-                    _recordingTrackpoints.value = currentPoints
-                }
-            }
-        }
+        TrackingService.startService(
+            getApplication(),
+            _recordingSportType.value,
+            _selectedSimulationRoute.value,
+            TrackingService.autoPauseSetting.value
+        )
     }
 
     fun stopRecording() {
-        recordingJob?.cancel()
-        _isRecording.value = false
+        TrackingService.pauseTracking(getApplication())
     }
 
-    fun finishRecording(notes: String = "") {
-        stopRecording()
+    fun resumeRecording() {
+        TrackingService.resumeTracking(getApplication())
+    }
+
+    fun finishRecording(notes: String = "", privacy: String = "Public") {
+        TrackingService.stopService(getApplication())
         val points = _recordingTrackpoints.value
         if (points.size < 2) return
 
@@ -623,22 +692,214 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
             elevationGainM = eleGain,
             gearId = _recordingGearId.value,
             routePointsJson = JsonHelper.pointsToJson(points),
-            notes = notes
+            notes = notes,
+            privacy = privacy
         )
 
         viewModelScope.launch {
-            repository.saveRecordedActivity(activity)
+            val activityId = repository.saveRecordedActivity(activity)
+            triggerNotification("Workout Saved 🎉", "Successfully saved '${activity.title}'! It's posted to the community.")
             _recordingDurationSeconds.value = 0L
             _recordingDistanceKm.value = 0.0
             _recordingTrackpoints.value = emptyList()
             _currentTab.value = Tab.SOCIAL_FEED // jump to the feed to see your workout card!
+            simulateSocialInteractionsForActivity(activityId, activity.title)
         }
     }
 
     fun discardRecording() {
-        stopRecording()
+        TrackingService.stopService(getApplication())
         _recordingDurationSeconds.value = 0L
         _recordingDistanceKm.value = 0.0
         _recordingTrackpoints.value = emptyList()
+    }
+
+    // Settings modifiers
+    fun setUseImperial(enabled: Boolean) {
+        viewModelScope.launch {
+            sessionManager.setUseImperial(enabled)
+        }
+    }
+
+    fun setAutoPause(enabled: Boolean) {
+        viewModelScope.launch {
+            sessionManager.setAutoPause(enabled)
+        }
+    }
+
+    fun setGpsAccuracyThreshold(meters: Int) {
+        viewModelScope.launch {
+            sessionManager.setGpsAccuracyThreshold(meters)
+        }
+    }
+
+    fun setDarkModeSetting(enabled: Boolean) {
+        viewModelScope.launch {
+            sessionManager.setDarkMode(enabled)
+            _themeMode.value = if (enabled) "dark" else "light"
+        }
+    }
+
+    // Authentication Functions
+    fun signUp(
+        email: String,
+        name: String,
+        password: String,
+        rememberMe: Boolean,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val normalizedEmail = email.trim().lowercase()
+            if (normalizedEmail.isEmpty() || name.trim().isEmpty() || password.isEmpty()) {
+                onError("Please fill in all fields.")
+                return@launch
+            }
+            val existingUser = repository.getUserByEmail(normalizedEmail)
+            if (existingUser != null) {
+                onError("Email already registered.")
+                return@launch
+            }
+            val hash = HashUtils.hashPassword(password)
+            val newUser = User(
+                email = normalizedEmail,
+                name = name.trim(),
+                passwordHash = hash
+            )
+            repository.insertUser(newUser)
+            sessionManager.saveSession(normalizedEmail, rememberMe)
+            triggerNotification("Welcome, ${newUser.name}! 🎉", "Your account has been created successfully.")
+            _appFlow.value = AppFlow.MAIN
+            onSuccess()
+        }
+    }
+
+    fun login(
+        email: String,
+        password: String,
+        rememberMe: Boolean,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val normalizedEmail = email.trim().lowercase()
+            if (normalizedEmail.isEmpty() || password.isEmpty()) {
+                onError("Please enter your email and password.")
+                return@launch
+            }
+            val user = repository.getUserByEmail(normalizedEmail)
+            if (user == null) {
+                onError("User not found.")
+                return@launch
+            }
+            val valid = HashUtils.checkPassword(password, user.passwordHash)
+            if (!valid) {
+                onError("Incorrect password.")
+                return@launch
+            }
+            sessionManager.saveSession(normalizedEmail, rememberMe)
+            triggerNotification("Welcome back! 👋", "Logged in as ${user.name}.")
+            _appFlow.value = AppFlow.MAIN
+            onSuccess()
+        }
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            sessionManager.clearSession()
+            _appFlow.value = AppFlow.LOGIN
+            triggerNotification("Logged Out 🔑", "You have been securely logged out.")
+        }
+    }
+
+    fun changePassword(
+        oldPass: String,
+        newPass: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val email = loggedInUserEmail.value
+            if (email == null) {
+                onError("No active session.")
+                return@launch
+            }
+            val user = repository.getUserByEmail(email)
+            if (user == null) {
+                onError("User not found.")
+                return@launch
+            }
+            if (!HashUtils.checkPassword(oldPass, user.passwordHash)) {
+                onError("Current password is incorrect.")
+                return@launch
+            }
+            if (newPass.length < 4) {
+                onError("New password must be at least 4 characters.")
+                return@launch
+            }
+            val hashed = HashUtils.hashPassword(newPass)
+            val updated = user.copy(passwordHash = hashed)
+            repository.updateUser(updated)
+            triggerNotification("Password Updated 🔒", "Your password was changed successfully.")
+            onSuccess()
+        }
+    }
+
+    fun editProfile(
+        name: String,
+        avatar: String,
+        heightCm: Double,
+        weightKg: Double,
+        birthday: String,
+        gender: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val email = loggedInUserEmail.value
+            if (email == null) {
+                onError("No active session.")
+                return@launch
+            }
+            val user = repository.getUserByEmail(email)
+            if (user == null) {
+                onError("User not found.")
+                return@launch
+            }
+            val updated = user.copy(
+                name = name.trim(),
+                avatar = avatar,
+                heightCm = heightCm,
+                weightKg = weightKg,
+                birthday = birthday,
+                gender = gender
+            )
+            repository.updateUser(updated)
+            triggerNotification("Profile Updated 👤", "Your changes have been saved.")
+            onSuccess()
+        }
+    }
+
+    fun deleteAccount(
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val email = loggedInUserEmail.value
+            if (email == null) {
+                onError("No active session.")
+                return@launch
+            }
+            val user = repository.getUserByEmail(email)
+            if (user == null) {
+                onError("User not found.")
+                return@launch
+            }
+            repository.deleteUser(user)
+            sessionManager.clearSession()
+            _appFlow.value = AppFlow.LOGIN
+            triggerNotification("Account Deleted ⚠️", "Your account has been deleted.")
+            onSuccess()
+        }
     }
 }

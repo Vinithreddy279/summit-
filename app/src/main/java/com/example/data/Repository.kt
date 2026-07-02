@@ -10,6 +10,7 @@ class SummitRepository(private val db: AppDatabase) {
     private val segmentEffortDao = db.segmentEffortDao()
     private val feedPostDao = db.feedPostDao()
     private val feedCommentDao = db.feedCommentDao()
+    private val userDao = db.userDao()
 
     val gears: Flow<List<Gear>> = gearDao.getAllGears()
     val activities: Flow<List<Activity>> = activityDao.getAllActivities()
@@ -117,7 +118,8 @@ class SummitRepository(private val db: AppDatabase) {
             kudosCount = 0,
             commentsCount = 0,
             isKudosedByMe = false,
-            timestamp = activity.timestamp
+            timestamp = activity.timestamp,
+            privacy = activity.privacy
         )
         feedPostDao.insertPost(feedPost)
 
@@ -145,4 +147,11 @@ class SummitRepository(private val db: AppDatabase) {
             }
         }
     }
+
+    // User Operations
+    suspend fun getUserByEmail(email: String): User? = userDao.getUserByEmail(email)
+    fun observeUserByEmail(email: String): Flow<User?> = userDao.observeUserByEmail(email)
+    suspend fun insertUser(user: User): Long = userDao.insertUser(user)
+    suspend fun updateUser(user: User) = userDao.updateUser(user)
+    suspend fun deleteUser(user: User) = userDao.deleteUser(user)
 }

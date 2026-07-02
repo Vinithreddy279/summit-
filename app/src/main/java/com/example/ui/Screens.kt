@@ -50,6 +50,19 @@ import com.example.data.*
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.window.DialogProperties
+import com.google.maps.android.compose.*
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.CameraUpdateFactory
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 
 @Composable
 fun SummitApp(viewModel: SummitViewModel) {
@@ -108,6 +121,16 @@ fun SummitApp(viewModel: SummitViewModel) {
                     // Comments Overlay Dialog
                     if (activeCommentsPostId != null) {
                         CommentsDialog(viewModel = viewModel)
+                    }
+
+                    // Activity Detail Overlay Dialog
+                    val selectedActivity by viewModel.selectedActivity.collectAsStateWithLifecycle()
+                    if (selectedActivity != null) {
+                        ActivityDetailDialog(
+                            activity = selectedActivity!!,
+                            viewModel = viewModel,
+                            onDismiss = { viewModel.selectActivity(null) }
+                        )
                     }
                 }
             }
@@ -1018,6 +1041,13 @@ fun OnboardingIllustration(page: Int) {
 
 @Composable
 fun LoginScreen(viewModel: SummitViewModel) {
+    var isSignUp by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var rememberMe by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1063,92 +1093,200 @@ fun LoginScreen(viewModel: SummitViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(28.dp)
-                .windowInsetsPadding(WindowInsets.safeContent),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .windowInsetsPadding(WindowInsets.safeContent)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header: Wordmark & Logo Grouping
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(top = 24.dp)
+                modifier = Modifier.padding(bottom = 16.dp)
             ) {
                 SummitLogo(
                     modifier = Modifier
-                        .size(96.dp)
-                        .padding(bottom = 12.dp)
+                        .size(80.dp)
+                        .padding(bottom = 8.dp)
                 )
-                SummitWordmark(fontSize = 32.sp)
+                SummitWordmark(fontSize = 28.sp)
+                Text(
+                    text = if (isSignUp) "CREATE OFFLINE EXPLORER PROFILE" else "SECURE ATHLETIC CONSOLE ACCESS",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    color = OrangePrimary,
+                    letterSpacing = 1.5.sp,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
 
-            // Middle: Main Greeting & Subtitle inside a Glass Card
+            // Middle: Input fields in a Glass Card
             GlassCard(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 16.dp)
+                    .padding(vertical = 12.dp)
             ) {
                 Text(
-                    text = "Welcome to Summit",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    text = if (isSignUp) "Sign Up" else "Log In",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                if (errorMessage != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF3B0F11), RoundedCornerShape(8.dp))
+                            .border(1.dp, Color(0xFFE57373), RoundedCornerShape(8.dp))
+                            .padding(10.dp)
+                            .padding(bottom = 4.dp)
+                    ) {
+                        Text(
+                            text = errorMessage!!,
+                            color = Color(0xFFFFCDD2),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
 
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.padding(horizontal = 8.dp)
-                ) {
-                    val items = listOf(
-                        "Track every trail." to Icons.Filled.DirectionsRun,
-                        "Reach every peak." to Icons.Filled.FilterHdr,
-                        "Create unforgettable adventures." to Icons.Filled.Explore
+                if (isSignUp) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it; errorMessage = null },
+                        label = { Text("Athlete Name") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedLabelColor = OrangePrimary,
+                            unfocusedLabelColor = SlateTextSecondary
+                        ),
+                        modifier = Modifier.fillMaxWidth().testTag("signup_name_input")
                     )
-                    items.forEach { (text, icon) ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = null,
-                                tint = Color(0xFFFF6A00),
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Text(
-                                text = text,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = Color(0xFFCBD5E1)
-                            )
-                        }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it; errorMessage = null },
+                    label = { Text("Explorer Email") },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = OrangePrimary,
+                        unfocusedBorderColor = SlateCardSurfaceVariant,
+                        focusedLabelColor = OrangePrimary,
+                        unfocusedLabelColor = SlateTextSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("login_email_input")
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it; errorMessage = null },
+                    label = { Text("Console Key (Password)") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = OrangePrimary,
+                        unfocusedBorderColor = SlateCardSurfaceVariant,
+                        focusedLabelColor = OrangePrimary,
+                        unfocusedLabelColor = SlateTextSecondary
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("login_password_input")
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Checkbox(
+                            checked = rememberMe,
+                            onCheckedChange = { rememberMe = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = OrangePrimary,
+                                uncheckedColor = SlateTextSecondary
+                            ),
+                            modifier = Modifier.testTag("remember_me_checkbox")
+                        )
+                        Text(
+                            text = "Remember Me",
+                            color = SlateTextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             }
 
-            // Footer Button: CTA Continue
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Buttons: CTA Submit & Switch View
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 PremiumGradientButton(
                     onClick = {
-                        viewModel.setAppFlow(SummitViewModel.AppFlow.MAIN)
+                        if (isSignUp) {
+                            viewModel.signUp(
+                                email = email,
+                                name = name,
+                                password = password,
+                                rememberMe = rememberMe,
+                                onSuccess = {},
+                                onError = { errorMessage = it }
+                            )
+                        } else {
+                            viewModel.login(
+                                email = email,
+                                password = password,
+                                rememberMe = rememberMe,
+                                onSuccess = {},
+                                onError = { errorMessage = it }
+                            )
+                        }
                     },
-                    text = "Continue →"
+                    text = if (isSignUp) "Create Profile" else "Access Console",
+                    modifier = Modifier.testTag("submit_button")
                 )
 
+                TextButton(
+                    onClick = {
+                        isSignUp = !isSignUp
+                        errorMessage = null
+                    }
+                ) {
+                    Text(
+                        text = if (isSignUp) "Already have an offline profile? Log In" else "New to Summit? Create Offline Profile",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
                 Text(
-                    text = "By continuing, you agree to our Premium Explorer Terms.",
-                    fontSize = 11.sp,
-                    color = Color(0xFFCBD5E1).copy(alpha = 0.6f),
-                    textAlign = TextAlign.Center
+                    text = "Summit keeps all user records strictly offline in a secure, encrypted client-side database.",
+                    fontSize = 10.sp,
+                    color = Color(0xFFCBD5E1).copy(alpha = 0.5f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
         }
@@ -1160,15 +1298,21 @@ fun SystemSettingsDialog(
     viewModel: SummitViewModel,
     onDismiss: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val useImperial by viewModel.useImperial.collectAsStateWithLifecycle()
+    val autoPauseSetting by viewModel.autoPauseSetting.collectAsStateWithLifecycle()
+    val gpsAccuracyMeters by viewModel.gpsAccuracyMeters.collectAsStateWithLifecycle()
+    val activities by viewModel.activities.collectAsStateWithLifecycle()
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
             colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(24.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .border(2.dp, OrangePrimary.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                .fillMaxHeight(0.85f)
+                .border(2.dp, OrangePrimary.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
                 .padding(4.dp)
         ) {
             Column(
@@ -1199,51 +1343,230 @@ fun SystemSettingsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Text(
-                    text = "VISUAL INTERFACE MODE",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = SlateTextSecondary,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Visual Interface Mode
+                    Column {
+                        Text(
+                            text = "VISUAL INTERFACE MODE",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SlateTextSecondary,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        ThemeOptionRow(
+                            label = "System Default",
+                            description = "Sync automatically with device theme setting",
+                            icon = "💻",
+                            selected = themeMode == "system",
+                            onClick = { viewModel.setThemeMode("system") }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ThemeOptionRow(
+                            label = "Midnight Dark",
+                            description = "Sleek low-glare dark theme console",
+                            icon = "🌌",
+                            selected = themeMode == "dark",
+                            onClick = { viewModel.setThemeMode("dark") }
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ThemeOptionRow(
+                            label = "Alpine Light",
+                            description = "Radiant high-contrast light theme",
+                            icon = "❄️",
+                            selected = themeMode == "light",
+                            onClick = { viewModel.setThemeMode("light") }
+                        )
+                    }
 
-                // Theme selection rows
-                ThemeOptionRow(
-                    label = "System Default",
-                    description = "Sync automatically with device theme setting",
-                    icon = "💻",
-                    selected = themeMode == "system",
-                    onClick = { viewModel.setThemeMode("system") }
-                )
+                    Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
 
-                Spacer(modifier = Modifier.height(10.dp))
+                    // Measurement Units Setting
+                    Column {
+                        Text(
+                            text = "MEASUREMENT UNITS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SlateTextSecondary,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SlateCardSurfaceVariant.copy(alpha = 0.5f))
+                                .clickable { viewModel.setUseImperial(!useImperial) }
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (useImperial) "Imperial Units (mi, ft, lbs)" else "Metric Units (km, m, kg)",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextPrimary
+                                )
+                                Text(
+                                    text = "Tap to switch between Metric and Imperial measurement systems",
+                                    fontSize = 11.sp,
+                                    color = SlateTextSecondary
+                                )
+                            }
+                            Switch(
+                                checked = useImperial,
+                                onCheckedChange = { viewModel.setUseImperial(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = OrangePrimary,
+                                    checkedTrackColor = OrangePrimary.copy(alpha = 0.4f)
+                                )
+                            )
+                        }
+                    }
 
-                ThemeOptionRow(
-                    label = "Midnight Dark",
-                    description = "Sleek low-glare dark theme console",
-                    icon = "🌌",
-                    selected = themeMode == "dark",
-                    onClick = { viewModel.setThemeMode("dark") }
-                )
+                    Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
 
-                Spacer(modifier = Modifier.height(10.dp))
+                    // Auto Pause Setting
+                    Column {
+                        Text(
+                            text = "RECORDING CONTROLS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SlateTextSecondary,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(SlateCardSurfaceVariant.copy(alpha = 0.5f))
+                                .clickable { viewModel.setAutoPause(!autoPauseSetting) }
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Auto Pause",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextPrimary
+                                )
+                                Text(
+                                    text = "Automatically pauses recording when you stop moving",
+                                    fontSize = 11.sp,
+                                    color = SlateTextSecondary
+                                )
+                            }
+                            Switch(
+                                checked = autoPauseSetting,
+                                onCheckedChange = { viewModel.setAutoPause(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = OrangePrimary,
+                                    checkedTrackColor = OrangePrimary.copy(alpha = 0.4f)
+                                )
+                            )
+                        }
+                    }
 
-                ThemeOptionRow(
-                    label = "Alpine Light",
-                    description = "Radiant high-contrast light theme",
-                    icon = "❄️",
-                    selected = themeMode == "light",
-                    onClick = { viewModel.setThemeMode("light") }
-                )
+                    Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
 
-                Spacer(modifier = Modifier.height(20.dp))
+                    // GPS Accuracy setting
+                    Column {
+                        Text(
+                            text = "GPS ACCURACY",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SlateTextSecondary,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf(
+                                5 to "High (5m)",
+                                10 to "Medium (10m)",
+                                25 to "Low (25m)"
+                            ).forEach { (meters, label) ->
+                                val selected = gpsAccuracyMeters == meters
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (selected) OrangePrimary.copy(alpha = 0.15f) else SlateCardSurfaceVariant.copy(alpha = 0.3f))
+                                        .border(1.dp, if (selected) OrangePrimary else SlateCardSurfaceVariant, RoundedCornerShape(12.dp))
+                                        .clickable { viewModel.setGpsAccuracyThreshold(meters) }
+                                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (selected) OrangePrimary else SlateTextPrimary,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
+
+                    // Data export options
+                    Column {
+                        Text(
+                            text = "DATA MANAGEMENT",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SlateTextSecondary,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        Button(
+                            onClick = { ExportUtils.exportCSV(context, activities) },
+                            colors = ButtonDefaults.buttonColors(containerColor = SlateCardSurfaceVariant),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Export Activities History (CSV)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = { ExportUtils.backupDatabase(context) },
+                            colors = ButtonDefaults.buttonColors(containerColor = SlateCardSurfaceVariant),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.SettingsBackupRestore, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Backup Local Database (SQLite)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
                 Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Connection details matching professional theme
                 Row(
@@ -1258,7 +1581,7 @@ fun SystemSettingsDialog(
                         color = SlateTextSecondary
                     )
                     Text(
-                        text = "ACTIVE",
+                        text = "SECURE & OFFLINE",
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Black,
                         color = Color(0xFF00E676)
@@ -1550,7 +1873,11 @@ fun WeatherWidget(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun RecentTripsCard(activities: List<com.example.data.Activity>, modifier: Modifier = Modifier) {
+fun RecentTripsCard(
+    activities: List<com.example.data.Activity>,
+    onActivityClick: (com.example.data.Activity) -> Unit,
+    modifier: Modifier = Modifier
+) {
     GlassCard(modifier = modifier) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1618,6 +1945,7 @@ fun RecentTripsCard(activities: List<com.example.data.Activity>, modifier: Modif
                             .fillMaxWidth()
                             .background(Color(0x0AFFFFFF), RoundedCornerShape(16.dp))
                             .border(1.dp, Color(0x10FFFFFF), RoundedCornerShape(16.dp))
+                            .clickable { onActivityClick(activity) }
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -1951,8 +2279,12 @@ fun WeeklyPerformanceMetricsWidget(
                     }
                 }
             }
+ 
+             Spacer(modifier = Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
+
+
+             Spacer(modifier = Modifier.height(16.dp))
 
             if (selectedTab == 0) {
                 HeartRateZonesContent(activities)
@@ -2229,14 +2561,19 @@ fun PaceDistributionContent(activities: List<com.example.data.Activity>) {
 
 @Composable
 fun DashboardScreen(viewModel: SummitViewModel) {
+    val activities by viewModel.activities.collectAsStateWithLifecycle()
+    val gears by viewModel.gears.collectAsStateWithLifecycle()
+
     var showSettings by remember { mutableStateOf(false) }
+    var showMonthlySummary by remember { mutableStateOf(false) }
 
     if (showSettings) {
         SystemSettingsDialog(viewModel = viewModel, onDismiss = { showSettings = false })
     }
 
-    val activities by viewModel.activities.collectAsStateWithLifecycle()
-    val gears by viewModel.gears.collectAsStateWithLifecycle()
+    if (showMonthlySummary) {
+        MonthlySummaryDialog(activities = activities, onDismiss = { showMonthlySummary = false })
+    }
 
     val totalDistance = activities.sumOf { it.distanceKm }
     val totalSeconds = activities.sumOf { it.durationSeconds }
@@ -2299,6 +2636,23 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
+                        onClick = { showMonthlySummary = true },
+                        modifier = Modifier
+                            .testTag("monthly_summary_button")
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(SlateCardSurface)
+                            .border(1.dp, OrangePrimary.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarToday,
+                            contentDescription = "Monthly Summary",
+                            tint = OrangePrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = { showSettings = true },
                         modifier = Modifier
                             .size(36.dp)
@@ -2341,7 +2695,11 @@ fun DashboardScreen(viewModel: SummitViewModel) {
         }
 
         item {
-            RecentTripsCard(activities = activities, modifier = Modifier.fillMaxWidth())
+            RecentTripsCard(
+                activities = activities,
+                onActivityClick = { viewModel.selectActivity(it) },
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(modifier = Modifier.height(16.dp))
         }
 
@@ -2747,6 +3105,7 @@ fun SportCard(sport: String, count: Int, icon: androidx.compose.ui.graphics.vect
 @Composable
 fun FeedScreen(viewModel: SummitViewModel) {
     val posts by viewModel.feedPosts.collectAsStateWithLifecycle()
+    val activities by viewModel.activities.collectAsStateWithLifecycle()
     val sportFilter by viewModel.feedSportFilter.collectAsStateWithLifecycle()
     val authorFilter by viewModel.feedAuthorFilter.collectAsStateWithLifecycle()
     val compactMode by viewModel.feedCompactMode.collectAsStateWithLifecycle()
@@ -2808,13 +3167,19 @@ fun FeedScreen(viewModel: SummitViewModel) {
                 // Sport Filters Horizontal Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("all", "run", "ride", "swim").forEach { sport ->
+                    val sportFilters = listOf(
+                        "all" to "All",
+                        "run" to "Running",
+                        "ride" to "Cycling"
+                    )
+                    sportFilters.forEach { (key, label) ->
                         FilterChip(
-                            label = sport.replaceFirstChar { it.uppercase() },
-                            selected = sportFilter == sport,
-                            onClick = { viewModel.setFeedSportFilter(sport) }
+                            label = label,
+                            selected = sportFilter == key,
+                            onClick = { viewModel.setFeedSportFilter(key) },
+                            modifier = Modifier.testTag("filter_chip_$key")
                         )
                     }
                 }
@@ -2893,11 +3258,24 @@ fun FeedScreen(viewModel: SummitViewModel) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(filteredPosts) { post ->
-                    if (compactMode) {
-                        CompactFeedPostCard(post = post, onKudosClick = { viewModel.toggleKudos(post.id) }, onCommentClick = { viewModel.openComments(post.id) })
-                    } else {
-                        RichFeedPostCard(post = post, showStats = showStats, onKudosClick = { viewModel.toggleKudos(post.id) }, onCommentClick = { viewModel.openComments(post.id) })
+                items(filteredPosts, key = { it.id }) { post ->
+                    AnimatedCardContainer(key = post.id) {
+                        if (compactMode) {
+                            CompactFeedPostCard(post = post, onKudosClick = { viewModel.toggleKudos(post.id) }, onCommentClick = { viewModel.openComments(post.id) })
+                        } else {
+                            RichFeedPostCard(
+                                post = post,
+                                showStats = showStats,
+                                onKudosClick = { viewModel.toggleKudos(post.id) },
+                                onCommentClick = { viewModel.openComments(post.id) },
+                                onViewRouteClick = {
+                                    val matchedAct = activities.find { it.id == post.activityId }
+                                    if (matchedAct != null) {
+                                        viewModel.selectActivity(matchedAct)
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -2980,9 +3358,9 @@ fun FeedScreen(viewModel: SummitViewModel) {
 }
 
 @Composable
-fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(if (selected) OrangePrimary else SlateCardSurfaceVariant)
             .clickable(onClick = onClick)
@@ -3081,7 +3459,13 @@ fun AnimatedKudosIconButton(post: FeedPost, onClick: () -> Unit) {
 }
 
 @Composable
-fun RichFeedPostCard(post: FeedPost, showStats: Boolean, onKudosClick: () -> Unit, onCommentClick: () -> Unit) {
+fun RichFeedPostCard(
+    post: FeedPost,
+    showStats: Boolean,
+    onKudosClick: () -> Unit,
+    onCommentClick: () -> Unit,
+    onViewRouteClick: (() -> Unit)? = null
+) {
     Card(
         colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
         shape = RoundedCornerShape(24.dp),
@@ -3117,7 +3501,29 @@ fun RichFeedPostCard(post: FeedPost, showStats: Boolean, onKudosClick: () -> Uni
                 }
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
-                    Text(post.userName, fontWeight = FontWeight.Bold, color = SlateTextPrimary, fontSize = 14.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(post.userName, fontWeight = FontWeight.Bold, color = SlateTextPrimary, fontSize = 14.sp)
+                        if (post.privacy != "Public") {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            val privIcon = when (post.privacy) {
+                                "Private" -> "🔒"
+                                "Friends Only" -> "👥"
+                                else -> "🔓"
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .background(SlateCardSurfaceVariant, RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "$privIcon ${post.privacy}",
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextSecondary
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = "${formatDate(post.timestamp)} • Boulder, CO",
                         fontSize = 11.sp,
@@ -3244,6 +3650,20 @@ fun RichFeedPostCard(post: FeedPost, showStats: Boolean, onKudosClick: () -> Uni
                                         fontWeight = FontWeight.Bold,
                                         color = SlateTextPrimary
                                     )
+                                }
+                            }
+                            if (post.activityId != null && onViewRouteClick != null) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = onViewRouteClick,
+                                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary.copy(alpha = 0.12f), contentColor = OrangePrimary),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().height(36.dp),
+                                    contentPadding = PaddingValues(0.dp)
+                                ) {
+                                    Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("VIEW INTERACTIVE MAP", fontSize = 11.sp, fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
                                 }
                             }
                         }
@@ -3390,6 +3810,8 @@ fun CompactFeedPostCard(post: FeedPost, onKudosClick: () -> Unit, onCommentClick
 @Composable
 fun RecordScreen(viewModel: SummitViewModel) {
     val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
+    val isPaused by TrackingService.isPaused.collectAsStateWithLifecycle()
+    val isAutoPaused by TrackingService.isAutoPaused.collectAsStateWithLifecycle()
     val durationSeconds by viewModel.recordingDurationSeconds.collectAsStateWithLifecycle()
     val distanceKm by viewModel.recordingDistanceKm.collectAsStateWithLifecycle()
     val sportType by viewModel.recordingSportType.collectAsStateWithLifecycle()
@@ -3398,8 +3820,30 @@ fun RecordScreen(viewModel: SummitViewModel) {
     val trackpoints by viewModel.recordingTrackpoints.collectAsStateWithLifecycle()
     val selectedSimulationRoute by viewModel.selectedSimulationRoute.collectAsStateWithLifecycle()
 
+    val currentSpeedKmh by TrackingService.currentSpeedKmh.collectAsStateWithLifecycle()
+    val avgSpeedKmh by TrackingService.avgSpeedKmh.collectAsStateWithLifecycle()
+    val currentPaceString by TrackingService.currentPaceString.collectAsStateWithLifecycle()
+    val avgPaceString by TrackingService.avgPaceString.collectAsStateWithLifecycle()
+    val gpsAccuracyMeters by TrackingService.gpsAccuracyMeters.collectAsStateWithLifecycle()
+    val caloriesBurned by TrackingService.caloriesBurned.collectAsStateWithLifecycle()
+    val autoPauseSetting by TrackingService.autoPauseSetting.collectAsStateWithLifecycle()
+
     var showFinishDialog by remember { mutableStateOf(false) }
     var activityNotes by remember { mutableStateOf("") }
+    var selectedPrivacy by remember { mutableStateOf("Public") }
+
+    val cameraPositionState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(LatLng(37.7749, -122.4194), 13f)
+    }
+
+    LaunchedEffect(trackpoints) {
+        if (trackpoints.isNotEmpty()) {
+            val lastPt = trackpoints.last()
+            cameraPositionState.animate(
+                CameraUpdateFactory.newLatLngZoom(LatLng(lastPt.lat, lastPt.lng), 16f)
+            )
+        }
+    }
 
     val activeGearName = gears.find { it.id == selectedGearId }?.name ?: "No Gear Selected"
 
@@ -3509,6 +3953,40 @@ fun RecordScreen(viewModel: SummitViewModel) {
                             }
                         }
                     }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Auto-Pause Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Auto-Pause Stationary", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        Text("Automatically pause tracking when you stop moving.", fontSize = 11.sp, color = SlateTextSecondary)
+                    }
+                    Switch(
+                        checked = autoPauseSetting,
+                        onCheckedChange = { TrackingService.autoPauseSetting.value = it },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = OrangePrimary,
+                            checkedTrackColor = OrangePrimary.copy(alpha = 0.4f),
+                            uncheckedThumbColor = SlateTextSecondary,
+                            uncheckedTrackColor = SlateCardSurfaceVariant
+                        )
+                    )
                 }
             }
 
@@ -3664,84 +4142,66 @@ fun RecordScreen(viewModel: SummitViewModel) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Map Drawing Canvas showing real route matching!
+            // Actual Google Map with tiles, polyline, and auto-camera tracking
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .clip(RoundedCornerShape(20.dp))
                     .background(SlateCardSurface)
-                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp)),
-                contentAlignment = Alignment.Center
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp))
             ) {
-                if (trackpoints.isEmpty()) {
-                    Text("Acquiring GPS Signal...", color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                } else {
-                    // Draw route
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val pts = trackpoints
-                        val lats = pts.map { it.lat }
-                        val lngs = pts.map { it.lng }
+                GoogleMap(
+                    modifier = Modifier.fillMaxSize(),
+                    cameraPositionState = cameraPositionState,
+                    properties = MapProperties(
+                        isMyLocationEnabled = false,
+                        mapType = MapType.NORMAL
+                    ),
+                    uiSettings = MapUiSettings(
+                        zoomControlsEnabled = false,
+                        myLocationButtonEnabled = false
+                    )
+                ) {
+                    if (trackpoints.isNotEmpty()) {
+                        Polyline(
+                            points = trackpoints.map { LatLng(it.lat, it.lng) },
+                            color = OrangePrimary,
+                            width = 12f
+                        )
 
-                        val minLat = lats.minOrNull() ?: 0.0
-                        val maxLat = lats.maxOrNull() ?: 0.0
-                        val minLng = lngs.minOrNull() ?: 0.0
-                        val maxLng = lngs.maxOrNull() ?: 0.0
+                        // Start position marker
+                        val startPt = trackpoints.first()
+                        val startMarkerState = remember(startPt) { MarkerState(position = LatLng(startPt.lat, startPt.lng)) }
+                        Marker(
+                            state = startMarkerState,
+                            title = "Start Location"
+                        )
 
-                        val rangeLat = maxLat - minLat
-                        val rangeLng = maxLng - minLng
-
-                        val padding = 40.dp.toPx()
-                        val drawWidth = size.width - (padding * 2)
-                        val drawHeight = size.height - (padding * 2)
-
-                        val pathPoints = pts.map { p ->
-                            val x = if (rangeLng == 0.0) size.width / 2 else padding + ((p.lng - minLng) / rangeLng * drawWidth).toFloat()
-                            // Invert y because canvas (0,0) is top-left
-                            val y = if (rangeLat == 0.0) size.height / 2 else padding + ((maxLat - p.lat) / rangeLat * drawHeight).toFloat()
-                            Offset(x, y)
-                        }
-
-                        // Draw path lines
-                        if (pathPoints.size >= 2) {
-                            val path = Path().apply {
-                                moveTo(pathPoints[0].x, pathPoints[0].y)
-                                for (i in 1 until pathPoints.size) {
-                                    lineTo(pathPoints[i].x, pathPoints[i].y)
-                                }
-                            }
-                            drawPath(
-                                path = path,
-                                color = OrangePrimary,
-                                style = Stroke(width = 8f, cap = StrokeCap.Round)
-                            )
-                        }
-
-                        // Start dot (Green)
-                        if (pathPoints.isNotEmpty()) {
-                            drawCircle(Color.Green, radius = 12f, center = pathPoints.first())
-                        }
-                        // Live dot (Teal glow)
-                        if (pathPoints.size > 1) {
-                            drawCircle(NeonTealAccent, radius = 14f, center = pathPoints.last())
-                        }
-                    }
-
-                    // Floating simulation info
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(12.dp)
-                            .background(SlateDarkBackground.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "Route: " + (selectedSimulationRoute ?: "Free Mode"),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = NeonTealAccent
+                        // Current live location marker
+                        val lastPt = trackpoints.last()
+                        val currentMarkerState = remember(lastPt) { MarkerState(position = LatLng(lastPt.lat, lastPt.lng)) }
+                        Marker(
+                            state = currentMarkerState,
+                            title = "Current Position"
                         )
                     }
+                }
+
+                // Floating route type indicator
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                        .background(SlateDarkBackground.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = "Tracking: " + (selectedSimulationRoute ?: "Live GPS"),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = NeonTealAccent
+                    )
                 }
             }
 
@@ -3769,7 +4229,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     }
                 } else {
                     Button(
-                        onClick = { viewModel.startRecording() },
+                        onClick = { viewModel.resumeRecording() },
                         colors = ButtonDefaults.buttonColors(containerColor = RunColor),
                         modifier = Modifier
                             .weight(1f)
@@ -3834,7 +4294,60 @@ fun RecordScreen(viewModel: SummitViewModel) {
                             .height(100.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text("Privacy Settings", fontSize = 12.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 0.5.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val options = listOf(
+                            Triple("Public", "🔓 Public", "Everyone"),
+                            Triple("Friends Only", "👥 Friends", "Mutuals"),
+                            Triple("Private", "🔒 Private", "Only you")
+                        )
+                        options.forEach { (value, label, desc) ->
+                            val isSelected = selectedPrivacy == value
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isSelected) OrangePrimary.copy(alpha = 0.15f) else SlateCardSurfaceVariant.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(
+                                    width = 1.5.dp,
+                                    color = if (isSelected) OrangePrimary else Color.Transparent
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { selectedPrivacy = value }
+                                    .testTag("privacy_option_$value")
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .padding(vertical = 10.dp, horizontal = 4.dp)
+                                        .fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) OrangePrimary else SlateTextPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = desc,
+                                        fontSize = 8.sp,
+                                        color = SlateTextSecondary,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -3858,7 +4371,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
                                 onClick = {
-                                    viewModel.finishRecording(activityNotes)
+                                    viewModel.finishRecording(activityNotes, selectedPrivacy)
                                     activityNotes = ""
                                     showFinishDialog = false
                                 },
@@ -3916,13 +4429,59 @@ fun GearScreen(viewModel: SummitViewModel) {
 
     var expandedGearId by remember { mutableStateOf<Int?>(null) }
 
-    LazyColumn(
+    var activeSubTab by remember { mutableStateOf("profile") } // default to "profile"
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 24.dp)
+            .padding(16.dp)
     ) {
+        // Switcher Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(SlateCardSurfaceVariant.copy(alpha = 0.5f))
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf(
+                "profile" to "PROFILE & STATS",
+                "gear" to "GEAR CLOSET"
+            ).forEach { (tabId, tabName) ->
+                val selected = activeSubTab == tabId
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) OrangePrimary else Color.Transparent)
+                        .clickable { activeSubTab = tabId }
+                        .padding(vertical = 10.dp)
+                        .testTag("gear_screen_subtab_$tabId"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = tabName,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (selected) Color.White else SlateTextSecondary,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            }
+        }
+
+        if (activeSubTab == "profile") {
+            ProfileSubTabScreen(viewModel)
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -4382,6 +4941,8 @@ fun GearScreen(viewModel: SummitViewModel) {
                 }
             }
         }
+    }
+}
 
     // Add Gear Dialog
     if (showAddDialog) {
@@ -4560,6 +5121,10 @@ fun GearScreen(viewModel: SummitViewModel) {
 @Composable
 fun SegmentsScreen(viewModel: SummitViewModel) {
     val segments by viewModel.segments.collectAsStateWithLifecycle()
+    val activities by viewModel.activities.collectAsStateWithLifecycle()
+    val useImperial by viewModel.useImperial.collectAsStateWithLifecycle()
+
+    var activeSubTab by remember { mutableStateOf("history") } // "history" or "segments"
     var selectedSegmentId by remember { mutableStateOf<String?>(null) }
     val selectedSegment = segments.find { it.id == selectedSegmentId }
 
@@ -4574,68 +5139,274 @@ fun SegmentsScreen(viewModel: SummitViewModel) {
             .padding(16.dp)
     ) {
         if (selectedSegmentId == null) {
-            // Main Listing
-            Text(
-                text = "Predefined Segments",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black,
-                color = SlateTextPrimary
-            )
-            Text(
-                text = "Race yourself or other athletes on specific stretches of paths.",
-                fontSize = 13.sp,
-                color = SlateTextSecondary
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(segments) { seg ->
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                        shape = RoundedCornerShape(14.dp),
+            // Main sub-tabs selection
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(SlateCardSurfaceVariant.copy(alpha = 0.5f))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                listOf(
+                    "history" to "ACTIVITY HISTORY",
+                    "segments" to "PREDEFINED SEGMENTS"
+                ).forEach { (tabId, tabName) ->
+                    val selected = activeSubTab == tabId
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(14.dp))
-                            .clickable { selectedSegmentId = seg.id }
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selected) OrangePrimary else Color.Transparent)
+                            .clickable { activeSubTab = tabId }
+                            .padding(vertical = 10.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .clip(CircleShape)
-                                            .background(if (seg.sportType == "run") RunColor.copy(alpha = 0.2f) else RideColor.copy(alpha = 0.2f)),
-                                        contentAlignment = Alignment.Center
+                        Text(
+                            text = tabName,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (selected) Color.White else SlateTextSecondary,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                }
+            }
+
+            if (activeSubTab == "history") {
+                // Activity History layout
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Activity History",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Black,
+                            color = SlateTextPrimary
+                        )
+                        Text(
+                            text = "A records registry of all your secure offline workouts.",
+                            fontSize = 13.sp,
+                            color = SlateTextSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                if (activities.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.DirectionsRun,
+                                contentDescription = null,
+                                tint = SlateTextSecondary.copy(alpha = 0.5f),
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No workouts recorded yet",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SlateTextPrimary
+                            )
+                            Text(
+                                text = "Your workouts will sync and display here.",
+                                fontSize = 12.sp,
+                                color = SlateTextSecondary,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 24.dp)
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        items(activities) { activity ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+                                    .clickable { viewModel.selectActivity(activity) }
+                                    .testTag("activity_item_card_${activity.id}")
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = if (seg.sportType == "run") Icons.Filled.DirectionsRun else Icons.Filled.DirectionsBike,
-                                            contentDescription = "Sport icon",
-                                            tint = if (seg.sportType == "run") RunColor else RideColor,
-                                            modifier = Modifier.size(14.dp)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(32.dp)
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (activity.sportType == "run") RunColor.copy(alpha = 0.2f)
+                                                        else RideColor.copy(alpha = 0.2f)
+                                                    ),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = if (activity.sportType == "run") Icons.Default.DirectionsRun else Icons.Default.DirectionsBike,
+                                                    contentDescription = null,
+                                                    tint = if (activity.sportType == "run") RunColor else RideColor,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = activity.title,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = SlateTextPrimary
+                                            )
+                                        }
+
+                                        Text(
+                                            text = SimpleDateFormat("MMM dd, yyyy", Locale.US).format(Date(activity.timestamp)),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SlateTextSecondary
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = seg.sportType.uppercase(),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (seg.sportType == "run") RunColor else RideColor,
-                                        letterSpacing = 1.sp
-                                    )
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        // Distance
+                                        Column {
+                                            Text("DISTANCE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                            val distStr = if (useImperial) {
+                                                String.format(Locale.US, "%.2f mi", activity.distanceKm * 0.621371)
+                                            } else {
+                                                String.format(Locale.US, "%.2f km", activity.distanceKm)
+                                            }
+                                            Text(distStr, fontSize = 15.sp, fontWeight = FontWeight.Black, color = OrangePrimary)
+                                        }
+
+                                        // Duration
+                                        Column {
+                                            Text("DURATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                            Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                        }
+
+                                        // Pace / Speed
+                                        Column {
+                                            Text(if (activity.sportType == "run") "PACE" else "SPEED", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                            val paceStr = if (activity.sportType == "run") {
+                                                val factor = if (useImperial) 0.621371 else 1.0
+                                                val effectiveDist = activity.distanceKm * factor
+                                                if (effectiveDist > 0) {
+                                                    val paceSeconds = (activity.durationSeconds / effectiveDist).toLong()
+                                                    val m = paceSeconds / 60
+                                                    val s = paceSeconds % 60
+                                                    String.format(Locale.US, "%d:%02d /%s", m, s, if (useImperial) "mi" else "km")
+                                                } else "0:00"
+                                            } else {
+                                                val speed = if (useImperial) activity.avgSpeedKmh * 0.621371 else activity.avgSpeedKmh
+                                                String.format(Locale.US, "%.1f %s", speed, if (useImperial) "mph" else "km/h")
+                                            }
+                                            Text(paceStr, fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                        }
+
+                                        // Calories
+                                        Column {
+                                            Text("CALORIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                            val cals = (activity.distanceKm * if (activity.sportType == "run") 65 else 45).toInt()
+                                            Text("$cals kcal", fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                        }
+                                    }
                                 }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(seg.name, fontWeight = FontWeight.Bold, color = SlateTextPrimary, fontSize = 16.sp)
-                                Text(String.format("Length: %.0f meters", seg.lengthM), fontSize = 12.sp, color = SlateTextSecondary)
                             }
-                            Icon(Icons.Filled.ChevronRight, contentDescription = "View detail", tint = SlateTextSecondary)
+                        }
+                    }
+                }
+            } else {
+                // Main Listing of Predefined Segments
+                Text(
+                    text = "Predefined Segments",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                    color = SlateTextPrimary
+                )
+                Text(
+                    text = "Race yourself or other athletes on specific stretches of paths.",
+                    fontSize = 13.sp,
+                    color = SlateTextSecondary
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    items(segments) { seg ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(14.dp))
+                                .clickable { selectedSegmentId = seg.id }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(if (seg.sportType == "run") RunColor.copy(alpha = 0.2f) else RideColor.copy(alpha = 0.2f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = if (seg.sportType == "run") Icons.Filled.DirectionsRun else Icons.Filled.DirectionsBike,
+                                                contentDescription = "Sport icon",
+                                                tint = if (seg.sportType == "run") RunColor else RideColor,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = seg.sportType.uppercase(),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (seg.sportType == "run") RunColor else RideColor,
+                                            letterSpacing = 1.sp
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(seg.name, fontWeight = FontWeight.Bold, color = SlateTextPrimary, fontSize = 16.sp)
+                                    Text(String.format("Length: %.0f meters", seg.lengthM), fontSize = 12.sp, color = SlateTextSecondary)
+                                }
+                                Icon(Icons.Filled.ChevronRight, contentDescription = "View detail", tint = SlateTextSecondary)
+                            }
                         }
                     }
                 }
@@ -4932,4 +5703,1355 @@ fun formatElapsedTimeDouble(seconds: Double): String {
 fun formatDate(timestamp: Long): String {
     val sdf = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
     return sdf.format(Date(timestamp))
+}
+
+@Composable
+fun MonthlySummaryDialog(
+    activities: List<Activity>,
+    onDismiss: () -> Unit
+) {
+    val now = java.util.Calendar.getInstance()
+    val currentMonth = now.get(java.util.Calendar.MONTH)
+    val currentYear = now.get(java.util.Calendar.YEAR)
+
+    val monthName = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.US).format(now.time).uppercase()
+
+    val currentMonthActivities = activities.filter { activity ->
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = activity.timestamp
+        cal.get(java.util.Calendar.MONTH) == currentMonth && cal.get(java.util.Calendar.YEAR) == currentYear
+    }
+
+    val totalDistKm = currentMonthActivities.sumOf { it.distanceKm }
+    val totalElevM = currentMonthActivities.sumOf { it.elevationGainM }
+    val totalSecs = currentMonthActivities.sumOf { it.durationSeconds }
+    val activityCount = currentMonthActivities.size
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(2.dp, OrangePrimary, RoundedCornerShape(24.dp))
+                .padding(4.dp)
+                .testTag("monthly_summary_dialog")
+        ) {
+            Column(
+                modifier = Modifier
+                    .background(SlateCardSurface)
+                    .padding(20.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "MONTHLY SUMMARY",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Black,
+                            color = OrangePrimary,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = monthName,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SlateTextSecondary,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = SlateTextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Stats Grid
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Distance card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TrendingUp,
+                                contentDescription = "Distance",
+                                tint = OrangePrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("DISTANCE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text(
+                                text = String.format("%.1f km", totalDistKm),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SlateTextPrimary
+                            )
+                        }
+                    }
+
+                    // Elevation Card
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            horizontalAlignment = Alignment.Start
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Terrain,
+                                contentDescription = "Elevation",
+                                tint = OrangeSecondary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("ELEVATION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text(
+                                text = String.format("%.0f m", totalElevM),
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SlateTextPrimary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Time & Count Info
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("ACTIVE TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text(formatElapsedTimeShort(totalSecs), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("ACTIVITIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text("$activityCount recorded", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "CONTRIBUTING ACTIVITIES",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = SlateTextSecondary,
+                    letterSpacing = 0.5.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // List of contributors
+                Box(modifier = Modifier.heightIn(max = 140.dp)) {
+                    if (currentMonthActivities.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                            Text("No activities logged yet in $monthName.", color = SlateTextSecondary, fontSize = 12.sp)
+                        }
+                    } else {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(currentMonthActivities) { act ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(SlateCardSurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = if (act.sportType == "run") "🏃" else "🚴",
+                                            fontSize = 18.sp
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.widthIn(max = 130.dp)) {
+                                            Text(
+                                                text = act.title,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = SlateTextPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.US).format(java.util.Date(act.timestamp)),
+                                                fontSize = 10.sp,
+                                                color = SlateTextSecondary
+                                            )
+                                        }
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = String.format("%.2f km", act.distanceKm),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SlateTextPrimary
+                                        )
+                                        Text(
+                                            text = String.format("+%.0fm", act.elevationGainM),
+                                            fontSize = 10.sp,
+                                            color = SlateTextSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text("DONE", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedCardContainer(
+    key: Any,
+    content: @Composable () -> Unit
+) {
+    var visible by remember(key) { mutableStateOf(false) }
+    LaunchedEffect(key) {
+        visible = true
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = androidx.compose.animation.core.tween(500)) + slideInVertically(
+            initialOffsetY = { 60 },
+            animationSpec = androidx.compose.animation.core.tween(500, easing = androidx.compose.animation.core.LinearOutSlowInEasing)
+        )
+    ) {
+        content()
+    }
+}
+
+@Composable
+fun InteractiveMapComponent(
+    points: List<com.example.data.GPSPoint>,
+    modifier: Modifier = Modifier
+) {
+    if (points.isEmpty()) {
+        Box(
+            modifier = modifier
+                .background(SlateCardSurfaceVariant, RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("No GPS route data recorded.", color = SlateTextSecondary, fontSize = 12.sp)
+        }
+        return
+    }
+
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    val lats = points.map { it.lat }
+    val lngs = points.map { it.lng }
+
+    val minLat = lats.minOrNull() ?: 0.0
+    val maxLat = lats.maxOrNull() ?: 0.0
+    val minLng = lngs.minOrNull() ?: 0.0
+    val maxLng = lngs.maxOrNull() ?: 0.0
+
+    val rangeLat = maxLat - minLat
+    val rangeLng = maxLng - minLng
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(SlateDarkBackground)
+            .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp))
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    scale = (scale * zoom).coerceIn(0.5f, 60f)
+                    offset += pan
+                }
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val padding = 40.dp.toPx()
+            val drawWidth = size.width - (padding * 2)
+            val drawHeight = size.height - (padding * 2)
+
+            val rawPathPoints = points.map { p ->
+                val x = if (rangeLng == 0.0) size.width / 2 else padding + ((p.lng - minLng) / rangeLng * drawWidth).toFloat()
+                val y = if (rangeLat == 0.0) size.height / 2 else padding + ((maxLat - p.lat) / rangeLat * drawHeight).toFloat()
+                Offset(x, y)
+            }
+
+            withTransform({
+                translate(offset.x, offset.y)
+                scale(scale, scale, pivot = Offset(size.width / 2, size.height / 2))
+            }) {
+                val gridStep = 50f
+                val gridColor = SlateCardSurfaceVariant.copy(alpha = 0.3f)
+                for (y in 0..(size.height / gridStep).toInt()) {
+                    drawLine(gridColor, Offset(0f, y * gridStep), Offset(size.width, y * gridStep), strokeWidth = 1f)
+                }
+                for (x in 0..(size.width / gridStep).toInt()) {
+                    drawLine(gridColor, Offset(x * gridStep, 0f), Offset(x * gridStep, size.height), strokeWidth = 1f)
+                }
+
+                val centerCircle = Offset(size.width / 2, size.height / 2)
+                for (r in 1..4) {
+                    drawCircle(
+                        color = SlateCardSurfaceVariant.copy(alpha = 0.15f),
+                        radius = r * 150f,
+                        center = centerCircle,
+                        style = Stroke(width = 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f))
+                    )
+                }
+
+                if (rawPathPoints.size >= 2) {
+                    val path = Path().apply {
+                        moveTo(rawPathPoints[0].x, rawPathPoints[0].y)
+                        for (i in 1 until rawPathPoints.size) {
+                            lineTo(rawPathPoints[i].x, rawPathPoints[i].y)
+                        }
+                    }
+                    drawPath(
+                        path = path,
+                        color = OrangePrimary.copy(alpha = 0.4f),
+                        style = Stroke(width = 16f / scale, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    )
+                    drawPath(
+                        path = path,
+                        color = OrangePrimary,
+                        style = Stroke(width = 6f / scale, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    )
+                }
+
+                if (rawPathPoints.isNotEmpty()) {
+                    drawCircle(Color.Green, radius = 10f / scale, center = rawPathPoints.first())
+                    drawCircle(Color.Green.copy(alpha = 0.3f), radius = 18f / scale, center = rawPathPoints.first())
+                }
+
+                if (rawPathPoints.size > 1) {
+                    drawCircle(Color.Red, radius = 10f / scale, center = rawPathPoints.last())
+                    drawCircle(Color.Red.copy(alpha = 0.3f), radius = 18f / scale, center = rawPathPoints.last())
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(12.dp)
+                .background(SlateDarkBackground.copy(alpha = 0.75f), RoundedCornerShape(12.dp))
+                .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(12.dp))
+                .padding(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            IconButton(
+                onClick = { scale = (scale * 1.3f).coerceAtMost(60f) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = OrangePrimary)
+            }
+            IconButton(
+                onClick = { scale = (scale / 1.3f).coerceAtLeast(0.5f) },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = OrangePrimary)
+            }
+            IconButton(
+                onClick = {
+                    scale = 1f; offset = Offset.Zero
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.MyLocation, contentDescription = "Reset", tint = OrangePrimary)
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp)
+                .background(Color(0xBA1F2937), RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                "🗺️ INTERACTIVE - PINCH/DRAG",
+                fontSize = 9.sp,
+                color = OrangePrimary,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+@Composable
+fun ActivityDetailDialog(
+    activity: com.example.data.Activity,
+    viewModel: SummitViewModel,
+    onDismiss: () -> Unit
+) {
+    val useImperial by viewModel.useImperial.collectAsStateWithLifecycle()
+    val points = remember(activity.routePointsJson) {
+        try {
+            JsonHelper.jsonToPoints(activity.routePointsJson)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    val efforts by viewModel.repository.getEffortsForActivity(activity.id).collectAsState(emptyList())
+
+    Dialog(
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = onDismiss
+    ) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f)
+                .padding(16.dp)
+                .border(1.5.dp, OrangePrimary, RoundedCornerShape(24.dp))
+                .testTag("activity_detail_dialog")
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(18.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (activity.sportType == "run") Color(0x20FF5E00) else Color(0x2000A2FF)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (activity.sportType == "run") Icons.Default.DirectionsRun else Icons.Default.DirectionsBike,
+                                contentDescription = null,
+                                tint = if (activity.sportType == "run") OrangePrimary else Color(0xFF00A2FF),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = activity.title,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SlateTextPrimary
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.US).format(Date(activity.timestamp)),
+                                    fontSize = 11.sp,
+                                    color = SlateTextSecondary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                val privacyIcon = when (activity.privacy) {
+                                    "Private" -> "🔒"
+                                    "Friends Only" -> "👥"
+                                    else -> "🔓"
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .background(SlateCardSurfaceVariant, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "$privacyIcon ${activity.privacy}",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SlateTextSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        IconButton(
+                            onClick = { ExportUtils.exportGPX(context, activity) },
+                            modifier = Modifier.size(28.dp).testTag("export_gpx_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Export GPX",
+                                tint = OrangePrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = SlateTextSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Divider(color = SlateCardSurfaceVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    InteractiveMapComponent(
+                        points = points,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("DISTANCE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                val distStr = if (useImperial) {
+                                    String.format(Locale.US, "%.2f mi", activity.distanceKm * 0.621371)
+                                } else {
+                                    String.format(Locale.US, "%.2f km", activity.distanceKm)
+                                }
+                                Text(distStr, fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                            }
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("ELEVATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                val elevStr = if (useImperial) {
+                                    String.format(Locale.US, "+%.0f ft", activity.elevationGainM * 3.28084)
+                                } else {
+                                    String.format(Locale.US, "+%.0f m", activity.elevationGainM)
+                                }
+                                Text(elevStr, fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                            }
+                        }
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("DURATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                            }
+                        }
+                    }
+
+                    if (activity.notes.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text("DESCRIPTION", fontSize = 10.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 0.5.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = activity.notes,
+                            fontSize = 13.sp,
+                            color = SlateTextPrimary,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(SlateCardSurfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                                .padding(12.dp)
+                        )
+                    }
+
+                    if (efforts.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("MATCHED SEGMENTS", fontSize = 10.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 0.5.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            efforts.forEach { effort ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(SlateCardSurfaceVariant, RoundedCornerShape(8.dp))
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(if (effort.isPr) "🥇" else "⏱️", fontSize = 16.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Column {
+                                            Text(effort.segmentName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                                            Text("Avg Speed: ${String.format(Locale.US, "%.1f km/h", effort.avgSpeedMps * 3.6)}", fontSize = 10.sp, color = SlateTextSecondary)
+                                        }
+                                    }
+                                    Text(
+                                        text = "${(effort.elapsedTimeSeconds / 60).toInt()}m ${(effort.elapsedTimeSeconds % 60).toInt()}s",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SlateTextPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Button(
+                    onClick = onDismiss,
+                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text("DONE", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileSubTabScreen(viewModel: SummitViewModel) {
+    val activities by viewModel.activities.collectAsStateWithLifecycle()
+    val loggedInUser by viewModel.loggedInUser.collectAsStateWithLifecycle()
+    val useImperial by viewModel.useImperial.collectAsStateWithLifecycle()
+
+    // Edit Profile State
+    var showEditProfileDialog by remember { mutableStateOf(false) }
+    var editName by remember { mutableStateOf("") }
+    var editAvatar by remember { mutableStateOf("avatar_you") }
+    var editHeight by remember { mutableStateOf("") }
+    var editWeight by remember { mutableStateOf("") }
+    var editBirthday by remember { mutableStateOf("") }
+    var editGender by remember { mutableStateOf("") }
+
+    // Change Password State
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
+    var currentPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmNewPassword by remember { mutableStateOf("") }
+
+    // Delete Account State
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        // Profile header card
+        item {
+            val user = loggedInUser
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(24.dp))
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Avatar Circle
+                        val emoji = when (user?.avatar) {
+                            "avatar_shoes" -> "🏃‍♂️"
+                            "avatar_bike" -> "🚴‍♀️"
+                            "avatar_fire" -> "🔥"
+                            "avatar_trophy" -> "🏆"
+                            "avatar_mountain" -> "🏔️"
+                            else -> "⚡"
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(OrangePrimary.copy(alpha = 0.15f))
+                                .border(2.dp, OrangePrimary, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(emoji, fontSize = 32.sp)
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = user?.name ?: "Summit Athlete",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SlateTextPrimary
+                            )
+                            Text(
+                                text = user?.email ?: "offline@summit.io",
+                                fontSize = 12.sp,
+                                color = SlateTextSecondary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .background(OrangePrimary.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "SUMMIT ATHLETE",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = OrangePrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    // Profile Actions Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (user != null) {
+                                    editName = user.name
+                                    editAvatar = user.avatar
+                                    editHeight = user.heightCm.toString()
+                                    editWeight = user.weightKg.toString()
+                                    editBirthday = user.birthday
+                                    editGender = user.gender
+                                }
+                                showEditProfileDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = SlateCardSurfaceVariant),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).testTag("edit_profile_button")
+                        ) {
+                            Text("EDIT PROFILE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        }
+
+                        Button(
+                            onClick = { showChangePasswordDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = SlateCardSurfaceVariant),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).testTag("change_password_button")
+                        ) {
+                            Text("PASSWORD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.logout() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0x15FF5E00)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).testTag("logout_button")
+                        ) {
+                            Text("LOGOUT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OrangePrimary)
+                        }
+
+                        Button(
+                            onClick = { showDeleteConfirmDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0x15FF3B30)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f).testTag("delete_account_button")
+                        ) {
+                            Text("DELETE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFFF3B30))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Athlete Details card
+        item {
+            val user = loggedInUser
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(24.dp))
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "ATHLETE BIOMETRICS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = OrangePrimary,
+                        letterSpacing = 1.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Height
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("HEIGHT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            val hCm = user?.heightCm ?: 175.0
+                            val heightStr = if (useImperial) {
+                                val totalInches = (hCm / 2.54).toInt()
+                                val ft = totalInches / 12
+                                val inch = totalInches % 12
+                                "$ft'$inch\""
+                            } else {
+                                "${hCm.toInt()} cm"
+                            }
+                            Text(heightStr, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+
+                        // Weight
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("WEIGHT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            val wKg = user?.weightKg ?: 70.0
+                            val weightStr = if (useImperial) {
+                                String.format(Locale.US, "%.0f lbs", wKg * 2.20462)
+                            } else {
+                                "${wKg.toInt()} kg"
+                            }
+                            Text(weightStr, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Birthday
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("BIRTHDAY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            val bday = user?.birthday ?: "1990-01-01"
+                            val formattedBday = try {
+                                val parsed = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(bday)
+                                SimpleDateFormat("MMM dd, yyyy", Locale.US).format(parsed!!)
+                            } catch (e: Exception) {
+                                bday
+                            }
+                            Text(formattedBday, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+
+                        // Gender
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("GENDER", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text(user?.gender ?: "Other", fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Workout Statistics card
+        item {
+            val totalWorkouts = activities.size
+            val totalDistanceKm = activities.sumOf { it.distanceKm }
+            val totalDurationSec = activities.sumOf { it.durationSeconds }
+            val totalCalories = activities.sumOf { (it.distanceKm * if (it.sportType == "run") 65 else 45).toInt() }
+            val longestWorkoutKm = activities.maxOfOrNull { it.distanceKm } ?: 0.0
+
+            // Fastest pace
+            val fastestPaceStr = remember(activities, useImperial) {
+                val runActivities = activities.filter { it.sportType == "run" && it.distanceKm > 0 }
+                val rideActivities = activities.filter { it.sportType == "ride" && it.distanceKm > 0 }
+                
+                val bestRunPace = runActivities.map { act ->
+                    val factor = if (useImperial) 0.621371 else 1.0
+                    val effectiveDist = act.distanceKm * factor
+                    act.durationSeconds / effectiveDist
+                }.minOrNull()
+
+                val bestRideSpeed = rideActivities.map { act ->
+                    if (useImperial) act.avgSpeedKmh * 0.621371 else act.avgSpeedKmh
+                }.maxOrNull()
+
+                val runText = if (bestRunPace != null) {
+                    val m = (bestRunPace / 60).toLong()
+                    val s = (bestRunPace % 60).toLong()
+                    String.format(Locale.US, "%d:%02d /%s", m, s, if (useImperial) "mi" else "km")
+                } else null
+
+                val rideText = if (bestRideSpeed != null) {
+                    String.format(Locale.US, "%.1f %s", bestRideSpeed, if (useImperial) "mph" else "km/h")
+                } else null
+
+                when {
+                    runText != null && rideText != null -> "🏃 $runText | 🚴 $rideText"
+                    runText != null -> "🏃 $runText"
+                    rideText != null -> "🚴 $rideText"
+                    else -> "N/A"
+                }
+            }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(24.dp))
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "ATHLETIC SUMMARY",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = OrangePrimary,
+                        letterSpacing = 1.5.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Total workouts
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("WORKOUTS", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text("$totalWorkouts", fontSize = 20.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+
+                        // Total Distance
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("DISTANCE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            val distStr = if (useImperial) {
+                                String.format(Locale.US, "%.1f mi", totalDistanceKm * 0.621371)
+                            } else {
+                                String.format(Locale.US, "%.1f km", totalDistanceKm)
+                            }
+                            Text(distStr, fontSize = 20.sp, fontWeight = FontWeight.Black, color = OrangePrimary)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Total Duration
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("DURATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            val hrs = totalDurationSec / 3600
+                            val mins = (totalDurationSec % 3600) / 60
+                            Text(
+                                text = if (hrs > 0) "${hrs}h ${mins}m" else "${mins}m",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SlateTextPrimary
+                            )
+                        }
+
+                        // Calories
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("CALORIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text("$totalCalories kcal", fontSize = 20.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Longest workout
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("LONGEST WORKOUT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            val maxDistStr = if (useImperial) {
+                                String.format(Locale.US, "%.2f mi", longestWorkoutKm * 0.621371)
+                            } else {
+                                String.format(Locale.US, "%.2f km", longestWorkoutKm)
+                            }
+                            Text(maxDistStr, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+
+                        // Fastest pace
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("FASTEST PACE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text(fastestPaceStr, fontSize = 14.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Achievements Header Section (keeping existing AchievementsSection)
+        item {
+            AchievementsSection(modifier = Modifier.fillMaxWidth())
+        }
+    }
+
+    // Edit Profile Dialog
+    if (showEditProfileDialog) {
+        Dialog(onDismissRequest = { showEditProfileDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(24.dp))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text("Edit Athlete Profile", fontSize = 20.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Display Name") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Profile Avatar", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            "avatar_you" to "⚡",
+                            "avatar_shoes" to "🏃‍♂️",
+                            "avatar_bike" to "🚴‍♀️",
+                            "avatar_fire" to "🔥",
+                            "avatar_trophy" to "🏆",
+                            "avatar_mountain" to "🏔️"
+                        ).forEach { (avId, avEmoji) ->
+                            val selected = editAvatar == avId
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (selected) OrangePrimary else SlateCardSurfaceVariant)
+                                    .clickable { editAvatar = avId },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(avEmoji, fontSize = 20.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = editHeight,
+                        onValueChange = { editHeight = it },
+                        label = { Text("Height (cm)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = editWeight,
+                        onValueChange = { editWeight = it },
+                        label = { Text("Weight (kg)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = editBirthday,
+                        onValueChange = { editBirthday = it },
+                        label = { Text("Birthday (YYYY-MM-DD)") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Gender", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf("Male", "Female", "Other").forEach { gen ->
+                            val selected = editGender == gen
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(if (selected) OrangePrimary else SlateCardSurfaceVariant)
+                                    .clickable { editGender = gen }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = gen,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selected) Color.White else SlateTextPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showEditProfileDialog = false }) {
+                            Text("Cancel", color = SlateTextSecondary)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Button(
+                            onClick = {
+                                val hVal = editHeight.toDoubleOrNull() ?: 175.0
+                                val wVal = editWeight.toDoubleOrNull() ?: 70.0
+                                viewModel.editProfile(
+                                    name = editName,
+                                    avatar = editAvatar,
+                                    heightCm = hVal,
+                                    weightKg = wVal,
+                                    birthday = editBirthday,
+                                    gender = editGender,
+                                    onSuccess = { showEditProfileDialog = false },
+                                    onError = {}
+                                )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                        ) {
+                            Text("Save", color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Change Password Dialog
+    if (showChangePasswordDialog) {
+        Dialog(onDismissRequest = { showChangePasswordDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(24.dp))
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Text("Change Password", fontSize = 20.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    var passError by remember { mutableStateOf<String?>(null) }
+
+                    OutlinedTextField(
+                        value = currentPassword,
+                        onValueChange = { currentPassword = it },
+                        label = { Text("Current Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = newPassword,
+                        onValueChange = { newPassword = it },
+                        label = { Text("New Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = confirmNewPassword,
+                        onValueChange = { confirmNewPassword = it },
+                        label = { Text("Confirm New Password") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OrangePrimary,
+                            unfocusedBorderColor = SlateCardSurfaceVariant,
+                            focusedTextColor = SlateTextPrimary,
+                            unfocusedTextColor = SlateTextPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (passError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(passError!!, color = Color.Red, fontSize = 12.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { showChangePasswordDialog = false }) {
+                            Text("Cancel", color = SlateTextSecondary)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Button(
+                            onClick = {
+                                if (newPassword != confirmNewPassword) {
+                                    passError = "New passwords do not match."
+                                } else {
+                                    viewModel.changePassword(
+                                        oldPass = currentPassword,
+                                        newPass = newPassword,
+                                        onSuccess = {
+                                            currentPassword = ""
+                                            newPassword = ""
+                                            confirmNewPassword = ""
+                                            passError = null
+                                            showChangePasswordDialog = false
+                                        },
+                                        onError = { passError = it }
+                                    )
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                        ) {
+                            Text("Change", color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Delete Account Confirmation Dialog
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("Delete Account permanently?", fontWeight = FontWeight.Black, color = SlateTextPrimary) },
+            text = { Text("All your recorded offline workouts, athlete bio-metrics, and settings will be permanently erased. This cannot be undone.", color = SlateTextSecondary) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteAccount(
+                            onSuccess = { showDeleteConfirmDialog = false },
+                            onError = {}
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF3B30))
+                ) {
+                    Text("Delete Permanently", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("Cancel", color = SlateTextSecondary)
+                }
+            },
+            containerColor = SlateCardSurface
+        )
+    }
 }

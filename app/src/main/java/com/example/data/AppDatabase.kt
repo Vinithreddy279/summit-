@@ -106,9 +106,10 @@ interface FeedCommentDao {
         Segment::class,
         SegmentEffort::class,
         FeedPost::class,
-        FeedComment::class
+        FeedComment::class,
+        User::class
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -118,6 +119,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun segmentEffortDao(): SegmentEffortDao
     abstract fun feedPostDao(): FeedPostDao
     abstract fun feedCommentDao(): FeedCommentDao
+    abstract fun userDao(): UserDao
 
     companion object {
         @Volatile
