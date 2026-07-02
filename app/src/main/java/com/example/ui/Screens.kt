@@ -51,7 +51,10 @@ import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.nativeCanvas
+import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeJoin
@@ -63,6 +66,22 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.CameraUpdateFactory
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.platform.LocalContext
+import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.compass.CompassOverlay
+import org.osmdroid.views.overlay.compass.InternalCompassOrientationProvider
+import org.osmdroid.views.overlay.gestures.RotationGestureOverlay
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
+import android.preference.PreferenceManager
 
 @Composable
 fun SummitApp(viewModel: SummitViewModel) {
@@ -3807,6 +3826,7 @@ fun CompactFeedPostCard(post: FeedPost, onKudosClick: () -> Unit, onCommentClick
 // ============================================================================
 // Screen 3: GPS Fitness Active Recording (Simulated / Real tracking with route drawing Canvas)
 // ============================================================================
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun RecordScreen(viewModel: SummitViewModel) {
     val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
@@ -3832,234 +3852,399 @@ fun RecordScreen(viewModel: SummitViewModel) {
     var activityNotes by remember { mutableStateOf("") }
     var selectedPrivacy by remember { mutableStateOf("Public") }
 
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(LatLng(37.7749, -122.4194), 13f)
-    }
-
-    LaunchedEffect(trackpoints) {
-        if (trackpoints.isNotEmpty()) {
-            val lastPt = trackpoints.last()
-            cameraPositionState.animate(
-                CameraUpdateFactory.newLatLngZoom(LatLng(lastPt.lat, lastPt.lng), 16f)
-            )
-        }
-    }
+    val permissionState = rememberMultiplePermissionsState(
+        permissions = listOf(
+            android.Manifest.permission.ACCESS_FINE_LOCATION,
+            android.Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+    )
 
     val activeGearName = gears.find { it.id == selectedGearId }?.name ?: "No Gear Selected"
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        if (!isRecording && trackpoints.isEmpty()) {
-            // Configuration Setup Layout
-            Text(
-                text = "Record Activity",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Black,
-                color = SlateTextPrimary
-            )
-            Text(
-                text = "Establish your session settings before starting.",
-                fontSize = 13.sp,
-                color = SlateTextSecondary
-            )
+    val context = LocalContext.current
+    var gpsFixState by remember { mutableStateOf<android.location.Location?>(null) }
+    var isCheckingGps by remember { mutableStateOf(false) }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Sport Selection Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Select Activity Type", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        SportSelectorButton(
-                            label = "Run",
-                            icon = Icons.Filled.DirectionsRun,
-                            selected = sportType == "run",
-                            color = RunColor,
-                            onClick = { viewModel.setRecordingSportType("run") }
-                        )
-                        SportSelectorButton(
-                            label = "Ride",
-                            icon = Icons.Filled.DirectionsBike,
-                            selected = sportType == "ride",
-                            color = RideColor,
-                            onClick = { viewModel.setRecordingSportType("ride") }
-                        )
-                        SportSelectorButton(
-                            label = "Walk",
-                            icon = Icons.Filled.DirectionsWalk,
-                            selected = sportType == "walk",
-                            color = WalkColor,
-                            onClick = { viewModel.setRecordingSportType("walk") }
-                        )
+    LaunchedEffect(selectedSimulationRoute, permissionState.allPermissionsGranted) {
+        if (selectedSimulationRoute == "None" || selectedSimulationRoute == null) {
+            if (permissionState.allPermissionsGranted) {
+                isCheckingGps = true
+                val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+                try {
+                    fusedClient.lastLocation.addOnSuccessListener { loc ->
+                        if (loc != null && (System.currentTimeMillis() - loc.time) < 60000) {
+                            gpsFixState = loc
+                            isCheckingGps = false
+                        }
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Gear Selection Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Select Gear to Wear", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (gears.isEmpty()) {
-                        Text("No active gear registered. Tap Gear screen to register gear first.", color = SlateTextSecondary, fontSize = 12.sp)
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            gears.filter { !it.isRetired }.forEach { gear ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (selectedGearId == gear.id) OrangePrimary.copy(alpha = 0.2f) else SlateCardSurfaceVariant)
-                                        .clickable { viewModel.setRecordingGear(if (selectedGearId == gear.id) null else gear.id) }
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = if (gear.type == "shoes") Icons.Filled.DirectionsRun else Icons.Filled.DirectionsBike,
-                                            contentDescription = "Gear icon",
-                                            tint = if (selectedGearId == gear.id) OrangePrimary else SlateTextSecondary
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(gear.name, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
-                                    }
-                                    if (selectedGearId == gear.id) {
-                                        Icon(Icons.Filled.Check, contentDescription = "Selected", tint = OrangePrimary)
-                                    }
-                                }
+                    
+                    val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
+                        com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY,
+                        2000L
+                    ).build()
+                    
+                    val callback = object : com.google.android.gms.location.LocationCallback() {
+                        override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                            val lastLoc = result.lastLocation
+                            if (lastLoc != null) {
+                                gpsFixState = lastLoc
+                                isCheckingGps = false
+                                fusedClient.removeLocationUpdates(this)
                             }
                         }
                     }
+                    
+                    fusedClient.requestLocationUpdates(
+                        locationRequest,
+                        callback,
+                        android.os.Looper.getMainLooper()
+                    )
+                } catch (e: SecurityException) {
+                    isCheckingGps = false
                 }
+            } else {
+                gpsFixState = null
+                isCheckingGps = false
             }
+        } else {
+            gpsFixState = null
+            isCheckingGps = false
+        }
+    }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Auto-Pause Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                shape = RoundedCornerShape(16.dp),
+    if (!isRecording && trackpoints.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+        ) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp, bottom = 100.dp)
             ) {
+                Text(
+                    text = "Record Activity",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Black,
+                    color = SlateTextPrimary
+                )
+                
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Auto-Pause Stationary", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
-                        Text("Automatically pause tracking when you stop moving.", fontSize = 11.sp, color = SlateTextSecondary)
-                    }
-                    Switch(
-                        checked = autoPauseSetting,
-                        onCheckedChange = { TrackingService.autoPauseSetting.value = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = OrangePrimary,
-                            checkedTrackColor = OrangePrimary.copy(alpha = 0.4f),
-                            uncheckedThumbColor = SlateTextSecondary,
-                            uncheckedTrackColor = SlateCardSurfaceVariant
+                    Text(
+                        text = "Establish your session settings before starting.",
+                        fontSize = 13.sp,
+                        color = SlateTextSecondary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    
+                    // Status indicator
+                    val isDemo = selectedSimulationRoute != "None" && selectedSimulationRoute != null
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(
+                                if (isDemo) Color(0xFFFFA726).copy(alpha = 0.15f) else Color(0xFF66BB6A).copy(alpha = 0.15f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(if (isDemo) Color(0xFFFFA726) else Color(0xFF66BB6A), CircleShape)
                         )
-                    )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isDemo) "Demo Mode" else "Live GPS",
+                            color = if (isDemo) Color(0xFFFFA726) else Color(0xFF66BB6A),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-            // Simulation Route Selection Card (Incredible simulation!)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("GPS Simulation Route (Demo Mode)", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
-                    Text("Great for testing segment matching directly in the web emulator!", fontSize = 11.sp, color = SlateTextSecondary)
-                    Spacer(modifier = Modifier.height(12.dp))
+                // Sport Selection Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Select Activity Type", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            SportSelectorButton(
+                                label = "Run",
+                                icon = Icons.Filled.DirectionsRun,
+                                selected = sportType == "run",
+                                color = RunColor,
+                                onClick = { viewModel.setRecordingSportType("run") }
+                            )
+                            SportSelectorButton(
+                                label = "Ride",
+                                icon = Icons.Filled.DirectionsBike,
+                                selected = sportType == "ride",
+                                color = RideColor,
+                                onClick = { viewModel.setRecordingSportType("ride") }
+                            )
+                            SportSelectorButton(
+                                label = "Walk",
+                                icon = Icons.Filled.DirectionsWalk,
+                                selected = sportType == "walk",
+                                color = WalkColor,
+                                onClick = { viewModel.setRecordingSportType("walk") }
+                            )
+                        }
+                    }
+                }
 
-                    val simulationOptions = listOf(
-                        "None",
-                        "Golden Gate Bridge Crossing",
-                        "Twin Peaks Hill Climb",
-                        "Presidio Loop Cycle",
-                        "Hawk Hill Peak Climb"
-                    )
+                Spacer(modifier = Modifier.height(16.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        simulationOptions.forEach { route ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selectedSimulationRoute == route) NeonTealAccent.copy(alpha = 0.2f) else SlateCardSurfaceVariant)
-                                    .clickable {
-                                        viewModel.setSimulationRoute(route)
-                                        if (route.contains("Cycle") || route.contains("Hill Peak")) {
-                                            viewModel.setRecordingSportType("ride")
-                                        } else if (route != "None") {
-                                            viewModel.setRecordingSportType("run")
+                // Gear Selection Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Select Gear to Wear", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (gears.isEmpty()) {
+                            Text("No active gear registered. Tap Gear screen to register gear first.", color = SlateTextSecondary, fontSize = 12.sp)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                gears.filter { !it.isRetired }.forEach { gear ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (selectedGearId == gear.id) OrangePrimary.copy(alpha = 0.2f) else SlateCardSurfaceVariant)
+                                            .clickable { viewModel.setRecordingGear(if (selectedGearId == gear.id) null else gear.id) }
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = if (gear.type == "shoes") Icons.Filled.DirectionsRun else Icons.Filled.DirectionsBike,
+                                                contentDescription = "Gear icon",
+                                                tint = if (selectedGearId == gear.id) OrangePrimary else SlateTextSecondary
+                                            )
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(gear.name, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                                        }
+                                        if (selectedGearId == gear.id) {
+                                            Icon(Icons.Filled.Check, contentDescription = "Selected", tint = OrangePrimary)
                                         }
                                     }
-                                    .padding(10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(route, fontWeight = FontWeight.Bold, color = SlateTextPrimary, fontSize = 13.sp)
-                                if (selectedSimulationRoute == route) {
-                                    Icon(Icons.Filled.CheckCircle, contentDescription = "Selected", tint = NeonTealAccent)
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
-                onClick = { viewModel.startRecording() },
-                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .testTag("start_recording_button"),
-                shape = RoundedCornerShape(28.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = "Start recording")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("START RECORDING", fontWeight = FontWeight.Black, color = Color.White, fontSize = 16.sp)
+                // Auto-Pause Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Auto-Pause Stationary", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                            Text("Automatically pause tracking when you stop moving.", fontSize = 11.sp, color = SlateTextSecondary)
+                        }
+                        Switch(
+                            checked = autoPauseSetting,
+                            onCheckedChange = { TrackingService.autoPauseSetting.value = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = OrangePrimary,
+                                checkedTrackColor = OrangePrimary.copy(alpha = 0.4f),
+                                uncheckedThumbColor = SlateTextSecondary,
+                                uncheckedTrackColor = SlateCardSurfaceVariant
+                            )
+                        )
+                    }
+                }
+
+                // GPS Simulation Route (Demo Mode) Card - Only visible in Debug builds
+                if (com.example.BuildConfig.DEBUG) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("GPS Simulation Route (Demo Mode)", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                            Text("Great for testing segment matching directly in the web emulator!", fontSize = 11.sp, color = SlateTextSecondary)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            val simulationOptions = listOf(
+                                "None",
+                                "Golden Gate Bridge Crossing",
+                                "Twin Peaks Hill Climb",
+                                "Presidio Loop Cycle",
+                                "Hawk Hill Peak Climb"
+                            )
+
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                simulationOptions.forEach { route ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (selectedSimulationRoute == route) NeonTealAccent.copy(alpha = 0.2f) else SlateCardSurfaceVariant)
+                                            .clickable {
+                                                viewModel.setSimulationRoute(route)
+                                                if (route.contains("Cycle") || route.contains("Hill Peak")) {
+                                                    viewModel.setRecordingSportType("ride")
+                                                } else if (route != "None") {
+                                                    viewModel.setRecordingSportType("run")
+                                                }
+                                            }
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(route, fontWeight = FontWeight.Bold, color = SlateTextPrimary, fontSize = 13.sp)
+                                        if (selectedSimulationRoute == route) {
+                                            Icon(Icons.Filled.CheckCircle, contentDescription = "Selected", tint = NeonTealAccent)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (selectedSimulationRoute == "None" && !permissionState.allPermissionsGranted) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = RunColor.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, RunColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Location Warning",
+                                tint = RunColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Location permission is required for Real Live GPS tracking. Tap START below to grant permission.",
+                                fontSize = 12.sp,
+                                color = SlateTextPrimary
+                            )
+                        }
+                    }
                 }
             }
-        } else {
+
+            // Fixed bottom bar with Orange Primary button, visible on every screen size
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, SlateDarkBackground.copy(alpha = 0.95f), SlateDarkBackground),
+                            startY = 0f,
+                            endY = 40f
+                        )
+                    )
+                    .navigationBarsPadding()
+                    .padding(16.dp)
+            ) {
+                val isDemo = selectedSimulationRoute != "None" && selectedSimulationRoute != null
+                val needsGpsFix = !isDemo && permissionState.allPermissionsGranted
+                val hasGpsFix = gpsFixState != null
+
+                Button(
+                    onClick = {
+                        if (selectedSimulationRoute == "None" && !permissionState.allPermissionsGranted) {
+                            permissionState.launchMultiplePermissionRequest()
+                        } else {
+                            viewModel.startRecording()
+                        }
+                    },
+                    enabled = sportType.isNotEmpty() && (!needsGpsFix || hasGpsFix),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = OrangePrimary,
+                        disabledContainerColor = OrangePrimary.copy(alpha = 0.5f)
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .testTag("start_recording_button"),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (needsGpsFix && !hasGpsFix) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Waiting for GPS...", fontWeight = FontWeight.Black, color = Color.White, fontSize = 16.sp)
+                        } else {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "Start recording", tint = Color.White)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                if (!permissionState.allPermissionsGranted && selectedSimulationRoute == "None") "GRANT PERMISSION & START" else "START RECORDING",
+                                fontWeight = FontWeight.Black,
+                                color = Color.White,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .navigationBarsPadding()
+        ) {
             // Live Recording Screen Dashboard
             Card(
                 colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
@@ -4117,21 +4302,29 @@ fun RecordScreen(viewModel: SummitViewModel) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                             Text("DISTANCE", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
                             Text(
-                                text = String.format("%.2f km", distanceKm),
-                                fontSize = 24.sp,
+                                text = String.format(Locale.US, "%.2f km", distanceKm),
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Black,
                                 color = OrangePrimary
                             )
                         }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            val avgSpeed = if (durationSeconds > 0) (distanceKm / (durationSeconds / 3600.0)) else 0.0
-                            Text("AVG SPEED", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Text("PACE", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
                             Text(
-                                text = String.format("%.1f km/h", avgSpeed),
-                                fontSize = 24.sp,
+                                text = if (currentPaceString.isNotBlank()) currentPaceString else if (avgPaceString.isNotBlank()) avgPaceString else "--:--/km",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black,
+                                color = SlateTextPrimary
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Text("SPEED", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = String.format(Locale.US, "%.1f km/h", currentSpeedKmh),
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Black,
                                 color = SlateTextPrimary
                             )
@@ -4140,70 +4333,79 @@ fun RecordScreen(viewModel: SummitViewModel) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            val isDemo = selectedSimulationRoute != "None" && selectedSimulationRoute != null
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDemo) Color(0xFFFFA726).copy(alpha = 0.15f) else Color(0xFF66BB6A).copy(alpha = 0.15f)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .border(
+                        1.dp, 
+                        if (isDemo) Color(0xFFFFA726).copy(alpha = 0.4f) else Color(0xFF66BB6A).copy(alpha = 0.4f), 
+                        RoundedCornerShape(12.dp)
+                    )
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(if (isDemo) Color(0xFFFFA726) else Color(0xFF66BB6A), CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isDemo) "Demo Mode Active" else "Live GPS Active",
+                            color = if (isDemo) Color(0xFFFFA726) else Color(0xFF66BB6A),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                    }
+                    if (isDemo) {
+                        Text(
+                            text = selectedSimulationRoute ?: "",
+                            color = SlateTextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else if (trackpoints.isEmpty()) {
+                        Text(
+                            text = "Waiting for GPS...",
+                            color = Color(0xFFFFA726),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            text = String.format(Locale.US, "Accuracy: %.1fm", gpsAccuracyMeters),
+                            color = SlateTextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
 
-            // Actual Google Map with tiles, polyline, and auto-camera tracking
-            Box(
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Actual Real OpenStreetMap Live Tracker with Polyline and Custom Overlays
+            OSMMapView(
+                points = trackpoints,
+                isLiveTracking = isRecording,
+                selectedSimulationRoute = selectedSimulationRoute,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .clip(RoundedCornerShape(20.dp))
                     .background(SlateCardSurface)
                     .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp))
-            ) {
-                GoogleMap(
-                    modifier = Modifier.fillMaxSize(),
-                    cameraPositionState = cameraPositionState,
-                    properties = MapProperties(
-                        isMyLocationEnabled = false,
-                        mapType = MapType.NORMAL
-                    ),
-                    uiSettings = MapUiSettings(
-                        zoomControlsEnabled = false,
-                        myLocationButtonEnabled = false
-                    )
-                ) {
-                    if (trackpoints.isNotEmpty()) {
-                        Polyline(
-                            points = trackpoints.map { LatLng(it.lat, it.lng) },
-                            color = OrangePrimary,
-                            width = 12f
-                        )
-
-                        // Start position marker
-                        val startPt = trackpoints.first()
-                        val startMarkerState = remember(startPt) { MarkerState(position = LatLng(startPt.lat, startPt.lng)) }
-                        Marker(
-                            state = startMarkerState,
-                            title = "Start Location"
-                        )
-
-                        // Current live location marker
-                        val lastPt = trackpoints.last()
-                        val currentMarkerState = remember(lastPt) { MarkerState(position = LatLng(lastPt.lat, lastPt.lng)) }
-                        Marker(
-                            state = currentMarkerState,
-                            title = "Current Position"
-                        )
-                    }
-                }
-
-                // Floating route type indicator
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp)
-                        .background(SlateDarkBackground.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "Tracking: " + (selectedSimulationRoute ?: "Live GPS"),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = NeonTealAccent
-                    )
-                }
-            }
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -5967,6 +6169,236 @@ fun AnimatedCardContainer(
     }
 }
 
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun OSMMapView(
+    points: List<com.example.data.GPSPoint>,
+    isLiveTracking: Boolean,
+    selectedSimulationRoute: String?,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var autoFollow by remember { mutableStateOf(true) }
+    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+
+    // Initialize osmdroid configuration
+    LaunchedEffect(Unit) {
+        org.osmdroid.config.Configuration.getInstance().load(
+            context,
+            android.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        )
+        org.osmdroid.config.Configuration.getInstance().userAgentValue = context.packageName
+    }
+
+    Box(modifier = modifier) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                MapView(ctx).apply {
+                    setTileSource(TileSourceFactory.MAPNIK)
+                    setMultiTouchControls(true)
+                    isTilesScaledToDpi = true
+                    zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+
+                    // Add rotation gesture overlay
+                    val rotationGestureOverlay = RotationGestureOverlay(this).apply { isEnabled = true }
+                    overlays.add(rotationGestureOverlay)
+
+                    // Add compass overlay
+                    val compassOverlay = CompassOverlay(ctx, InternalCompassOrientationProvider(ctx), this).apply {
+                        enableCompass()
+                    }
+                    overlays.add(compassOverlay)
+
+                    // Turn off auto-follow when user manually drags/scrolls the map
+                    setOnTouchListener { v, event ->
+                        if (event.action == android.view.MotionEvent.ACTION_MOVE) {
+                            autoFollow = false
+                        }
+                        v.performClick()
+                        false
+                    }
+                    
+                    mapViewRef = this
+                }
+            },
+            update = { mapView ->
+                mapViewRef = mapView
+                
+                // Clear existing dynamically added overlays (keeping rotation/compass overlays)
+                val nonSystemOverlays = mapView.overlays.filter { 
+                    it !is RotationGestureOverlay && it !is CompassOverlay 
+                }
+                mapView.overlays.removeAll(nonSystemOverlays)
+
+                if (points.isNotEmpty()) {
+                    // Draw Polyline (Summit Orange Route)
+                    val polyline = Polyline(mapView).apply {
+                        color = android.graphics.Color.parseColor("#FF5722") // Summit Orange Primary
+                        width = 8f
+                        setPoints(points.map { GeoPoint(it.lat, it.lng) })
+                    }
+                    mapView.overlays.add(polyline)
+
+                    // Start Marker (Green Dot with translucent aura)
+                    val startPt = points.first()
+                    val startMarker = Marker(mapView).apply {
+                        position = GeoPoint(startPt.lat, startPt.lng)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Start Location"
+                        
+                        val size = 48
+                        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bitmap)
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                        paint.color = 0xFF4CAF50.toInt() // Green
+                        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+                        paint.color = 0x404CAF50.toInt() // Green Aura
+                        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+                        icon = BitmapDrawable(context.resources, bitmap)
+                    }
+                    mapView.overlays.add(startMarker)
+
+                    // Current / End Marker
+                    val lastPt = points.last()
+                    val lastMarker = Marker(mapView).apply {
+                        position = GeoPoint(lastPt.lat, lastPt.lng)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = if (isLiveTracking) "Current Position" else "Finish Location"
+                        
+                        val size = 48
+                        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bitmap)
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                        
+                        if (isLiveTracking) {
+                            // Blue current location marker with translucent aura
+                            paint.color = 0xFF007AFF.toInt() // modern blue
+                            canvas.drawCircle(size / 2f, size / 2f, 10f, paint)
+                            paint.color = 0x40007AFF.toInt() // Aura
+                            canvas.drawCircle(size / 2f, size / 2f, 20f, paint)
+                        } else {
+                            // Red marker
+                            paint.color = 0xFFE91E63.toInt()
+                            canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+                            paint.color = 0x40E91E63.toInt()
+                            canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+                        }
+                        icon = BitmapDrawable(context.resources, bitmap)
+                    }
+                    mapView.overlays.add(lastMarker)
+
+                    // Trigger Camera Animations / Fitting
+                    if (isLiveTracking) {
+                        if (autoFollow) {
+                            val gp = GeoPoint(lastPt.lat, lastPt.lng)
+                            mapView.controller.animateTo(gp)
+                            if (mapView.zoomLevelDouble < 12.0) {
+                                mapView.controller.setZoom(17.5)
+                            }
+                        }
+                    } else {
+                        // Zoom to fit the route bounds
+                        val lats = points.map { it.lat }
+                        val lngs = points.map { it.lng }
+                        val minLat = lats.minOrNull() ?: 0.0
+                        val maxLat = lats.maxOrNull() ?: 0.0
+                        val minLng = lngs.minOrNull() ?: 0.0
+                        val maxLng = lngs.maxOrNull() ?: 0.0
+                        
+                        val boundingBox = org.osmdroid.util.BoundingBox(maxLat, maxLng, minLat, minLng)
+                        mapView.post {
+                            try {
+                                mapView.zoomToBoundingBox(boundingBox, true, 40)
+                            } catch (e: Exception) {
+                                val center = GeoPoint((maxLat + minLat) / 2.0, (maxLng + minLng) / 2.0)
+                                mapView.controller.setCenter(center)
+                                mapView.controller.setZoom(14.0)
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback/Default Center when no points yet (e.g. San Francisco)
+                    val sfCenter = GeoPoint(37.7749, -122.4194)
+                    mapView.controller.setCenter(sfCenter)
+                    mapView.controller.setZoom(13.0)
+                }
+                mapView.invalidate()
+            }
+        )
+
+        // Custom Overlay Controls: Zoom In, Zoom Out, Re-center
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(12.dp)
+                .background(SlateDarkBackground.copy(alpha = 0.75f), RoundedCornerShape(12.dp))
+                .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(12.dp))
+                .padding(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            IconButton(
+                onClick = { 
+                    mapViewRef?.let {
+                        val currentZoom = it.zoomLevelDouble
+                        it.controller.setZoom(currentZoom + 1.0)
+                    }
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = OrangePrimary)
+            }
+            IconButton(
+                onClick = { 
+                    mapViewRef?.let {
+                        val currentZoom = it.zoomLevelDouble
+                        it.controller.setZoom(currentZoom - 1.0)
+                    }
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = OrangePrimary)
+            }
+            IconButton(
+                onClick = { 
+                    autoFollow = true
+                    if (points.isNotEmpty()) {
+                        val lastPt = points.last()
+                        mapViewRef?.controller?.animateTo(GeoPoint(lastPt.lat, lastPt.lng))
+                        mapViewRef?.controller?.setZoom(17.5)
+                    } else {
+                        mapViewRef?.controller?.animateTo(GeoPoint(37.7749, -122.4194))
+                    }
+                },
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = if (autoFollow) Icons.Default.MyLocation else Icons.Default.LocationSearching, 
+                    contentDescription = "Re-center", 
+                    tint = if (autoFollow) NeonTealAccent else OrangePrimary
+                )
+            }
+        }
+
+        // Floating info badge
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp)
+                .background(Color(0xBA1F2937), RoundedCornerShape(8.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                "🗺️ INTERACTIVE OPENSTREETMAP",
+                fontSize = 9.sp,
+                color = OrangePrimary,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun InteractiveMapComponent(
     points: List<com.example.data.GPSPoint>,
@@ -5983,141 +6415,584 @@ fun InteractiveMapComponent(
         return
     }
 
-    var scale by remember { mutableStateOf(1f) }
-    var offset by remember { mutableStateOf(Offset.Zero) }
-
-    val lats = points.map { it.lat }
-    val lngs = points.map { it.lng }
-
-    val minLat = lats.minOrNull() ?: 0.0
-    val maxLat = lats.maxOrNull() ?: 0.0
-    val minLng = lngs.minOrNull() ?: 0.0
-    val maxLng = lngs.maxOrNull() ?: 0.0
-
-    val rangeLat = maxLat - minLat
-    val rangeLng = maxLng - minLng
-
-    Box(
+    OSMMapView(
+        points = points,
+        isLiveTracking = false,
+        selectedSimulationRoute = "Route Preview",
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .background(SlateDarkBackground)
             .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp))
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(0.5f, 60f)
-                    offset += pan
-                }
+    )
+}
+
+data class ActivitySplit(
+    val splitNum: Int,
+    val distance: Double,
+    val timeSeconds: Long,
+    val avgSpeedKmhOrMph: Double,
+    val paceString: String
+)
+
+fun calculateActivitySplits(points: List<com.example.data.GPSPoint>, useImperial: Boolean): List<ActivitySplit> {
+    if (points.size < 2) return emptyList()
+    
+    val targetSegmentMeters = if (useImperial) 1609.34 else 1000.0
+    val unitLabel = if (useImperial) "mi" else "km"
+    val splits = mutableListOf<ActivitySplit>()
+    
+    var currentSplitDistanceM = 0.0
+    var currentSplitTimeMs = 0L
+    var splitIndex = 1
+    var lastPoint = points.first()
+    
+    for (i in 1 until points.size) {
+        val currentPoint = points[i]
+        val segmentDistM = SegmentMatcher.haversineM(
+            Pair(lastPoint.lat, lastPoint.lng),
+            Pair(currentPoint.lat, currentPoint.lng)
+        )
+        val segmentTimeMs = currentPoint.timeMs - lastPoint.timeMs
+        
+        currentSplitDistanceM += segmentDistM
+        if (segmentTimeMs > 0) {
+            currentSplitTimeMs += segmentTimeMs
+        }
+        
+        if (currentSplitDistanceM >= targetSegmentMeters) {
+            val splitDist = if (useImperial) currentSplitDistanceM / 1609.34 else currentSplitDistanceM / 1000.0
+            val splitTimeSec = currentSplitTimeMs / 1000
+            
+            val avgSpeed = if (splitTimeSec > 0) {
+                val distKm = currentSplitDistanceM / 1000.0
+                val hours = splitTimeSec / 3600.0
+                val speedKmh = distKm / hours
+                if (useImperial) speedKmh * 0.621371 else speedKmh
+            } else {
+                0.0
             }
+            
+            val paceMin = if (splitDist > 0 && splitTimeSec > 0) {
+                (splitTimeSec / 60.0) / splitDist
+            } else {
+                0.0
+            }
+            val paceMinPart = paceMin.toInt()
+            val paceSecPart = ((paceMin - paceMinPart) * 60).toInt()
+            val paceStr = String.format(Locale.US, "%d:%02d/%s", paceMinPart, paceSecPart, unitLabel)
+            
+            splits.add(
+                ActivitySplit(
+                    splitNum = splitIndex++,
+                    distance = splitDist,
+                    timeSeconds = splitTimeSec,
+                    avgSpeedKmhOrMph = avgSpeed,
+                    paceString = paceStr
+                )
+            )
+            
+            currentSplitDistanceM = 0.0
+            currentSplitTimeMs = 0L
+        }
+        
+        lastPoint = currentPoint
+    }
+    
+    if (currentSplitDistanceM > 50.0) {
+        val splitDist = if (useImperial) currentSplitDistanceM / 1609.34 else currentSplitDistanceM / 1000.0
+        val splitTimeSec = currentSplitTimeMs / 1000
+        
+        val avgSpeed = if (splitTimeSec > 0) {
+            val distKm = currentSplitDistanceM / 1000.0
+            val hours = splitTimeSec / 3600.0
+            val speedKmh = distKm / hours
+            if (useImperial) speedKmh * 0.621371 else speedKmh
+        } else {
+            0.0
+        }
+        
+        val paceMin = if (splitDist > 0 && splitTimeSec > 0) {
+            (splitTimeSec / 60.0) / splitDist
+        } else {
+            0.0
+        }
+        val paceMinPart = paceMin.toInt()
+        val paceSecPart = ((paceMin - paceMinPart) * 60).toInt()
+        val paceStr = String.format(Locale.US, "%d:%02d/%s", paceMinPart, paceSecPart, unitLabel)
+        
+        splits.add(
+            ActivitySplit(
+                splitNum = splitIndex,
+                distance = splitDist,
+                timeSeconds = splitTimeSec,
+                avgSpeedKmhOrMph = avgSpeed,
+                paceString = paceStr
+            )
+        )
+    }
+    
+    if (splits.isEmpty() && points.size >= 2) {
+        val totalDistM = points.zipWithNext { a, b ->
+            SegmentMatcher.haversineM(Pair(a.lat, a.lng), Pair(b.lat, b.lng))
+        }.sum()
+        val totalTimeMs = maxOf(0L, points.last().timeMs - points.first().timeMs)
+        val totalTimeSec = totalTimeMs / 1000
+        val splitDist = if (useImperial) totalDistM / 1609.34 else totalDistM / 1000.0
+        
+        val avgSpeed = if (totalTimeSec > 0) {
+            val distKm = totalDistM / 1000.0
+            val hours = totalTimeSec / 3600.0
+            val speedKmh = distKm / hours
+            if (useImperial) speedKmh * 0.621371 else speedKmh
+        } else {
+            0.0
+        }
+        
+        val paceMin = if (splitDist > 0 && totalTimeSec > 0) {
+            (totalTimeSec / 60.0) / splitDist
+        } else {
+            0.0
+        }
+        val paceMinPart = paceMin.toInt()
+        val paceSecPart = ((paceMin - paceMinPart) * 60).toInt()
+        val paceStr = String.format(Locale.US, "%d:%02d/%s", paceMinPart, paceSecPart, unitLabel)
+        
+        splits.add(
+            ActivitySplit(
+                splitNum = 1,
+                distance = splitDist,
+                timeSeconds = totalTimeSec,
+                avgSpeedKmhOrMph = avgSpeed,
+                paceString = paceStr
+            )
+        )
+    }
+    
+    return splits
+}
+
+@Composable
+fun InteractiveCanvasChart(
+    title: String,
+    xValues: List<Double>,
+    yValues: List<Double>,
+    xLabelFormatter: (Double) -> String,
+    yLabelFormatter: (Double) -> String,
+    lineColor: Color = OrangePrimary,
+    modifier: Modifier = Modifier
+) {
+    if (xValues.isEmpty() || yValues.isEmpty() || xValues.size != yValues.size) {
+        Box(
+            modifier = modifier
+                .background(SlateCardSurfaceVariant, RoundedCornerShape(16.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("Insufficient data for chart.", color = SlateTextSecondary, fontSize = 12.sp)
+        }
+        return
+    }
+
+    var activeIndex by remember { mutableStateOf<Int?>(null) }
+
+    val minX = xValues.minOrNull() ?: 0.0
+    val maxX = xValues.maxOrNull() ?: 1.0
+    val minY = yValues.minOrNull() ?: 0.0
+    val maxY = yValues.maxOrNull() ?: 1.0
+
+    val rangeX = if (maxX - minX == 0.0) 1.0 else maxX - minX
+    val rangeY = if (maxY - minY == 0.0) 1.0 else maxY - minY
+
+    val paddingLeft = 50.dp
+    val paddingRight = 16.dp
+    val paddingTop = 24.dp
+    val paddingBottom = 32.dp
+
+    Column(
+        modifier = modifier
+            .background(SlateCardSurface, RoundedCornerShape(16.dp))
+            .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
+            .padding(16.dp)
     ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val padding = 40.dp.toPx()
-            val drawWidth = size.width - (padding * 2)
-            val drawHeight = size.height - (padding * 2)
-
-            val rawPathPoints = points.map { p ->
-                val x = if (rangeLng == 0.0) size.width / 2 else padding + ((p.lng - minLng) / rangeLng * drawWidth).toFloat()
-                val y = if (rangeLat == 0.0) size.height / 2 else padding + ((maxLat - p.lat) / rangeLat * drawHeight).toFloat()
-                Offset(x, y)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = SlateTextPrimary,
+                letterSpacing = 0.5.sp
+            )
+            
+            if (activeIndex != null && activeIndex!! in xValues.indices) {
+                val xVal = xValues[activeIndex!!]
+                val yVal = yValues[activeIndex!!]
+                Text(
+                    text = "${yLabelFormatter(yVal)} @ ${xLabelFormatter(xVal)}",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    color = lineColor
+                )
+            } else {
+                Text(
+                    text = "Drag to inspect",
+                    fontSize = 10.sp,
+                    color = SlateTextSecondary
+                )
             }
+        }
 
-            withTransform({
-                translate(offset.x, offset.y)
-                scale(scale, scale, pivot = Offset(size.width / 2, size.height / 2))
-            }) {
-                val gridStep = 50f
-                val gridColor = SlateCardSurfaceVariant.copy(alpha = 0.3f)
-                for (y in 0..(size.height / gridStep).toInt()) {
-                    drawLine(gridColor, Offset(0f, y * gridStep), Offset(size.width, y * gridStep), strokeWidth = 1f)
-                }
-                for (x in 0..(size.width / gridStep).toInt()) {
-                    drawLine(gridColor, Offset(x * gridStep, 0f), Offset(x * gridStep, size.height), strokeWidth = 1f)
-                }
+        Spacer(modifier = Modifier.height(12.dp))
 
-                val centerCircle = Offset(size.width / 2, size.height / 2)
-                for (r in 1..4) {
-                    drawCircle(
-                        color = SlateCardSurfaceVariant.copy(alpha = 0.15f),
-                        radius = r * 150f,
-                        center = centerCircle,
-                        style = Stroke(width = 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f))
-                    )
-                }
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val widthPx = with(density) { maxWidth.toPx() }
+            val heightPx = with(density) { maxHeight.toPx() }
 
-                if (rawPathPoints.size >= 2) {
-                    val path = Path().apply {
-                        moveTo(rawPathPoints[0].x, rawPathPoints[0].y)
-                        for (i in 1 until rawPathPoints.size) {
-                            lineTo(rawPathPoints[i].x, rawPathPoints[i].y)
-                        }
+            val pLeft = with(density) { paddingLeft.toPx() }
+            val pRight = with(density) { paddingRight.toPx() }
+            val pTop = with(density) { paddingTop.toPx() }
+            val pBottom = with(density) { paddingBottom.toPx() }
+
+            val chartWidth = widthPx - pLeft - pRight
+            val chartHeight = heightPx - pTop - pBottom
+
+            Canvas(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                val xInChart = offset.x - pLeft
+                                if (xInChart in 0f..chartWidth) {
+                                    val pct = xInChart / chartWidth
+                                    val approxIndex = (pct * (xValues.size - 1))
+                                        .roundToInt()
+                                        .coerceIn(0, xValues.size - 1)
+                                    activeIndex = approxIndex
+                                }
+                            },
+                            onDrag = { change, _ ->
+                                val xInChart = change.position.x - pLeft
+                                if (xInChart in 0f..chartWidth) {
+                                    val pct = xInChart / chartWidth
+                                    val approxIndex = (pct * (xValues.size - 1))
+                                        .roundToInt()
+                                        .coerceIn(0, xValues.size - 1)
+                                    activeIndex = approxIndex
+                                }
+                            },
+                            onDragEnd = {
+                                activeIndex = null
+                            },
+                            onDragCancel = {
+                                activeIndex = null
+                            }
+                        )
                     }
-                    drawPath(
-                        path = path,
-                        color = OrangePrimary.copy(alpha = 0.4f),
-                        style = Stroke(width = 16f / scale, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            ) {
+                val textPaint = android.graphics.Paint().apply {
+                    color = android.graphics.Color.parseColor("#718096")
+                    textSize = with(density) { 10.sp.toPx() }
+                    isAntiAlias = true
+                }
+
+                for (j in 0..2) {
+                    val yPct = j / 2f
+                    val yPos = pTop + chartHeight * (1f - yPct)
+                    val yVal = minY + rangeY * yPct
+                    
+                    drawLine(
+                        color = SlateCardSurfaceVariant,
+                        start = Offset(pLeft, yPos),
+                        end = Offset(widthPx - pRight, yPos),
+                        strokeWidth = 1f
                     )
-                    drawPath(
-                        path = path,
-                        color = OrangePrimary,
-                        style = Stroke(width = 6f / scale, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    
+                    drawContext.canvas.nativeCanvas.drawText(
+                        yLabelFormatter(yVal),
+                        10f,
+                        yPos + 8f,
+                        textPaint
                     )
                 }
 
-                if (rawPathPoints.isNotEmpty()) {
-                    drawCircle(Color.Green, radius = 10f / scale, center = rawPathPoints.first())
-                    drawCircle(Color.Green.copy(alpha = 0.3f), radius = 18f / scale, center = rawPathPoints.first())
+                val path = Path()
+                val fillPath = Path()
+
+                xValues.forEachIndexed { idx, x ->
+                    val y = yValues[idx]
+                    val xPct = (x - minX) / rangeX
+                    val yPct = (y - minY) / rangeY
+                    val px = pLeft + chartWidth * xPct.toFloat()
+                    val py = pTop + chartHeight * (1f - yPct.toFloat())
+
+                    if (idx == 0) {
+                        path.moveTo(px, py)
+                        fillPath.moveTo(px, chartHeight + pTop)
+                        fillPath.lineTo(px, py)
+                    } else {
+                        path.lineTo(px, py)
+                        fillPath.lineTo(px, py)
+                    }
+                    
+                    if (idx == xValues.size - 1) {
+                        fillPath.lineTo(px, chartHeight + pTop)
+                        fillPath.close()
+                    }
                 }
 
-                if (rawPathPoints.size > 1) {
-                    drawCircle(Color.Red, radius = 10f / scale, center = rawPathPoints.last())
-                    drawCircle(Color.Red.copy(alpha = 0.3f), radius = 18f / scale, center = rawPathPoints.last())
+                drawPath(
+                    path = fillPath,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(lineColor.copy(alpha = 0.35f), Color.Transparent),
+                        startY = pTop,
+                        endY = pTop + chartHeight
+                    )
+                )
+
+                drawPath(
+                    path = path,
+                    color = lineColor,
+                    style = Stroke(
+                        width = 4f,
+                        join = StrokeJoin.Round,
+                        cap = StrokeCap.Round
+                    )
+                )
+
+                drawContext.canvas.nativeCanvas.drawText(
+                    xLabelFormatter(minX),
+                    pLeft,
+                    heightPx - 10f,
+                    textPaint
+                )
+                
+                val endLabel = xLabelFormatter(maxX)
+                val endLabelWidth = textPaint.measureText(endLabel)
+                drawContext.canvas.nativeCanvas.drawText(
+                    endLabel,
+                    widthPx - pRight - endLabelWidth,
+                    heightPx - 10f,
+                    textPaint
+                )
+
+                activeIndex?.let { activeIdx ->
+                    if (activeIdx in xValues.indices) {
+                        val activeX = xValues[activeIdx]
+                        val activeY = yValues[activeIdx]
+                        val xPct = (activeX - minX) / rangeX
+                        val yPct = (activeY - minY) / rangeY
+                        val px = pLeft + chartWidth * xPct.toFloat()
+                        val py = pTop + chartHeight * (1f - yPct.toFloat())
+
+                        drawLine(
+                            color = SlateTextSecondary.copy(alpha = 0.5f),
+                            start = Offset(px, pTop),
+                            end = Offset(px, pTop + chartHeight),
+                            strokeWidth = 2f,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
+                        )
+
+                        drawCircle(
+                            color = lineColor,
+                            radius = 12f,
+                            center = Offset(px, py)
+                        )
+                        drawCircle(
+                            color = Color.White,
+                            radius = 6f,
+                            center = Offset(px, py)
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+fun PremiumOSMMapView(
+    points: List<com.example.data.GPSPoint>,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+
+    LaunchedEffect(Unit) {
+        Configuration.getInstance().load(
+            context,
+            PreferenceManager.getDefaultSharedPreferences(context)
+        )
+        Configuration.getInstance().userAgentValue = context.packageName
+    }
+
+    Box(modifier = modifier) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                MapView(ctx).apply {
+                    setTileSource(TileSourceFactory.MAPNIK)
+                    setMultiTouchControls(true)
+                    isTilesScaledToDpi = true
+                    zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
+
+                    val rotationGestureOverlay = RotationGestureOverlay(this).apply { isEnabled = true }
+                    overlays.add(rotationGestureOverlay)
+
+                    val compassOverlay = CompassOverlay(ctx, InternalCompassOrientationProvider(ctx), this).apply {
+                        enableCompass()
+                    }
+                    overlays.add(compassOverlay)
+
+                    mapViewRef = this
+                }
+            },
+            update = { mapView ->
+                mapViewRef = mapView
+                val nonSystemOverlays = mapView.overlays.filter { 
+                    it !is RotationGestureOverlay && it !is CompassOverlay 
+                }
+                mapView.overlays.removeAll(nonSystemOverlays)
+
+                if (points.isNotEmpty()) {
+                    val polyline = Polyline(mapView).apply {
+                        color = android.graphics.Color.parseColor("#FF6A00")
+                        width = 8f
+                        setPoints(points.map { GeoPoint(it.lat, it.lng) })
+                    }
+                    mapView.overlays.add(polyline)
+
+                    val startPt = points.first()
+                    val startMarker = Marker(mapView).apply {
+                        position = GeoPoint(startPt.lat, startPt.lng)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Start Location"
+                        val size = 48
+                        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bitmap)
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                        paint.color = 0xFF4CAF50.toInt()
+                        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+                        paint.color = 0x404CAF50.toInt()
+                        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+                        icon = BitmapDrawable(context.resources, bitmap)
+                    }
+                    mapView.overlays.add(startMarker)
+
+                    val lastPt = points.last()
+                    val lastMarker = Marker(mapView).apply {
+                        position = GeoPoint(lastPt.lat, lastPt.lng)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Finish Location"
+                        val size = 48
+                        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bitmap)
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                        paint.color = 0xFFE91E63.toInt()
+                        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+                        paint.color = 0x40E91E63.toInt()
+                        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+                        icon = BitmapDrawable(context.resources, bitmap)
+                    }
+                    mapView.overlays.add(lastMarker)
+
+                    val lats = points.map { it.lat }
+                    val lngs = points.map { it.lng }
+                    val minLat = lats.minOrNull() ?: 0.0
+                    val maxLat = lats.maxOrNull() ?: 0.0
+                    val minLng = lngs.minOrNull() ?: 0.0
+                    val maxLng = lngs.maxOrNull() ?: 0.0
+                    val boundingBox = org.osmdroid.util.BoundingBox(maxLat, maxLng, minLat, minLng)
+                    mapView.post {
+                        try {
+                            mapView.zoomToBoundingBox(boundingBox, true, 40)
+                        } catch (e: Exception) {
+                            val center = GeoPoint((maxLat + minLat) / 2.0, (maxLng + minLng) / 2.0)
+                            mapView.controller.setCenter(center)
+                            mapView.controller.setZoom(14.0)
+                        }
+                    }
+                }
+                mapView.invalidate()
+            }
+        )
 
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(12.dp)
-                .background(SlateDarkBackground.copy(alpha = 0.75f), RoundedCornerShape(12.dp))
-                .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(12.dp))
-                .padding(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            IconButton(
-                onClick = { scale = (scale * 1.3f).coerceAtMost(60f) },
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Zoom In", tint = OrangePrimary)
-            }
-            IconButton(
-                onClick = { scale = (scale / 1.3f).coerceAtLeast(0.5f) },
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(Icons.Default.Remove, contentDescription = "Zoom Out", tint = OrangePrimary)
-            }
-            IconButton(
+            FloatingActionButton(
                 onClick = {
-                    scale = 1f; offset = Offset.Zero
+                    val mapView = mapViewRef ?: return@FloatingActionButton
+                    if (points.isNotEmpty()) {
+                        val lats = points.map { it.lat }
+                        val lngs = points.map { it.lng }
+                        val minLat = lats.minOrNull() ?: 0.0
+                        val maxLat = lats.maxOrNull() ?: 0.0
+                        val minLng = lngs.minOrNull() ?: 0.0
+                        val maxLng = lngs.maxOrNull() ?: 0.0
+                        val boundingBox = org.osmdroid.util.BoundingBox(maxLat, maxLng, minLat, minLng)
+                        try {
+                            mapView.zoomToBoundingBox(boundingBox, true, 40)
+                        } catch (e: Exception) {
+                            val center = GeoPoint((maxLat + minLat) / 2.0, (maxLng + minLng) / 2.0)
+                            mapView.controller.setCenter(center)
+                            mapView.controller.setZoom(14.0)
+                        }
+                    }
                 },
-                modifier = Modifier.size(36.dp)
+                containerColor = SlateCardSurface,
+                contentColor = OrangePrimary,
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Icon(Icons.Default.MyLocation, contentDescription = "Reset", tint = OrangePrimary)
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = "Re-center Map",
+                    modifier = Modifier.size(20.dp)
+                )
             }
-        }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-                .background(Color(0xBA1F2937), RoundedCornerShape(8.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                "🗺️ INTERACTIVE - PINCH/DRAG",
-                fontSize = 9.sp,
-                color = OrangePrimary,
-                fontWeight = FontWeight.Black
-            )
+            FloatingActionButton(
+                onClick = {
+                    mapViewRef?.controller?.zoomIn()
+                },
+                containerColor = SlateCardSurface,
+                contentColor = SlateTextPrimary,
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Zoom In",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            FloatingActionButton(
+                onClick = {
+                    mapViewRef?.controller?.zoomOut()
+                },
+                containerColor = SlateCardSurface,
+                contentColor = SlateTextPrimary,
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Remove,
+                    contentDescription = "Zoom Out",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }
@@ -6128,6 +7003,7 @@ fun ActivityDetailDialog(
     viewModel: SummitViewModel,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val useImperial by viewModel.useImperial.collectAsStateWithLifecycle()
     val points = remember(activity.routePointsJson) {
         try {
@@ -6138,6 +7014,50 @@ fun ActivityDetailDialog(
     }
 
     val efforts by viewModel.repository.getEffortsForActivity(activity.id).collectAsState(emptyList())
+    
+    var editTitle by remember(activity.id) { mutableStateOf(activity.title) }
+    var editNotes by remember(activity.id) { mutableStateOf(activity.notes) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
+
+    val estCalories = remember(activity.distanceKm, activity.sportType, activity.durationSeconds) {
+        when (activity.sportType.lowercase()) {
+            "run" -> (activity.distanceKm * 65).toInt()
+            "ride" -> (activity.distanceKm * 32).toInt()
+            "hike" -> (activity.distanceKm * 55).toInt()
+            "walk" -> (activity.distanceKm * 48).toInt()
+            "swim" -> ((activity.durationSeconds / 3600.0) * 600).toInt()
+            else -> (activity.distanceKm * 50).toInt()
+        }
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete Workout?", color = SlateTextPrimary, fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to permanently delete this workout? This action cannot be undone.", color = SlateTextSecondary) },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    onClick = {
+                        viewModel.deleteActivity(activity)
+                        showDeleteConfirmation = false
+                        onDismiss()
+                    }
+                ) {
+                    Text("Delete", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmation = false }
+                ) {
+                    Text("Cancel", color = SlateTextSecondary)
+                }
+            },
+            containerColor = SlateCardSurface,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
 
     Dialog(
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -6148,7 +7068,7 @@ fun ActivityDetailDialog(
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .fillMaxHeight(0.85f)
+                .fillMaxHeight(0.95f)
                 .padding(16.dp)
                 .border(1.5.dp, OrangePrimary, RoundedCornerShape(24.dp))
                 .testTag("activity_detail_dialog")
@@ -6158,6 +7078,7 @@ fun ActivityDetailDialog(
                     .fillMaxSize()
                     .padding(18.dp)
             ) {
+                // Header Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -6169,74 +7090,67 @@ fun ActivityDetailDialog(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(if (activity.sportType == "run") Color(0x20FF5E00) else Color(0x2000A2FF)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = if (activity.sportType == "run") Icons.Default.DirectionsRun else Icons.Default.DirectionsBike,
+                                imageVector = when (activity.sportType.lowercase()) {
+                                    "run" -> Icons.Default.DirectionsRun
+                                    "ride" -> Icons.Default.DirectionsBike
+                                    "hike" -> Icons.Default.Terrain
+                                    "walk" -> Icons.Default.DirectionsWalk
+                                    else -> Icons.Default.FitnessCenter
+                                },
                                 contentDescription = null,
                                 tint = if (activity.sportType == "run") OrangePrimary else Color(0xFF00A2FF),
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = activity.title,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Black,
+                                text = activity.sportType.uppercase(),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrangePrimary,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                text = SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.US).format(Date(activity.timestamp)),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
                                 color = SlateTextPrimary
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = SimpleDateFormat("MMM d, yyyy • h:mm a", Locale.US).format(Date(activity.timestamp)),
-                                    fontSize = 11.sp,
-                                    color = SlateTextSecondary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                val privacyIcon = when (activity.privacy) {
-                                    "Private" -> "🔒"
-                                    "Friends Only" -> "👥"
-                                    else -> "🔓"
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .background(SlateCardSurfaceVariant, RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                                ) {
-                                    Text(
-                                        text = "$privacyIcon ${activity.privacy}",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = SlateTextSecondary
-                                    )
-                                }
-                            }
                         }
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        val context = androidx.compose.ui.platform.LocalContext.current
+                        // Favorite Heart
                         IconButton(
-                            onClick = { ExportUtils.exportGPX(context, activity) },
-                            modifier = Modifier.size(28.dp).testTag("export_gpx_button")
+                            onClick = { 
+                                viewModel.updateActivity(activity.copy(isFavorite = !activity.isFavorite))
+                            },
+                            modifier = Modifier.size(36.dp).testTag("favorite_button")
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Export GPX",
-                                tint = OrangePrimary,
-                                modifier = Modifier.size(18.dp)
+                                imageVector = if (activity.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = "Toggle Favorite",
+                                tint = if (activity.isFavorite) Color(0xFFE91E63) else SlateTextSecondary,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                        
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // Close Button
+                        IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "Close",
                                 tint = SlateTextSecondary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
@@ -6249,113 +7163,433 @@ fun ActivityDetailDialog(
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    InteractiveMapComponent(
+                    // Quick Stats Header Summary
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("DISTANCE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            val distVal = if (useImperial) activity.distanceKm * 0.621371 else activity.distanceKm
+                            Text(String.format(Locale.US, "%.2f %s", distVal, if (useImperial) "mi" else "km"), fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+                        Column {
+                            Text("DURATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+                        Column {
+                            Text("CALORIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                            Text("$estCalories kcal", fontSize = 18.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                        }
+                    }
+
+                    // Map Section
+                    Text("ROUTE MAP", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
+                    PremiumOSMMapView(
                         points = points,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(260.dp)
+                            .height(300.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .border(1.5.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    // Editable Title & Notes Section
+                    Text("WORKOUT DETAILS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = editTitle,
+                                onValueChange = { 
+                                    editTitle = it
+                                    viewModel.updateActivity(activity.copy(title = it))
+                                },
+                                label = { Text("Workout Title", color = SlateTextSecondary, fontSize = 11.sp) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = OrangePrimary,
+                                    unfocusedBorderColor = SlateCardSurfaceVariant,
+                                    focusedTextColor = SlateTextPrimary,
+                                    unfocusedTextColor = SlateTextPrimary,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold),
+                                modifier = Modifier.fillMaxWidth().testTag("edit_title_input")
+                            )
 
+                            OutlinedTextField(
+                                value = editNotes,
+                                onValueChange = { 
+                                    editNotes = it
+                                    viewModel.updateActivity(activity.copy(notes = it))
+                                },
+                                label = { Text("Notes & Description", color = SlateTextSecondary, fontSize = 11.sp) },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = OrangePrimary,
+                                    unfocusedBorderColor = SlateCardSurfaceVariant,
+                                    focusedTextColor = SlateTextPrimary,
+                                    unfocusedTextColor = SlateTextPrimary,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedContainerColor = Color.Transparent
+                                ),
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                                modifier = Modifier.fillMaxWidth().height(100.dp).testTag("edit_notes_input")
+                            )
+                        }
+                    }
+
+                    // Detailed Statistics Grid
+                    Text("PERFORMANCE STATISTICS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
+                    val avgPaceMinPerKm = if (activity.distanceKm > 0) (activity.durationSeconds / 60.0) / activity.distanceKm else 0.0
+                    val avgPaceStr = if (useImperial) {
+                        val paceMinPerMi = avgPaceMinPerKm / 0.621371
+                        val minPart = paceMinPerMi.toInt()
+                        val secPart = ((paceMinPerMi - minPart) * 60).toInt()
+                        String.format(Locale.US, "%d:%02d/mi", minPart, secPart)
+                    } else {
+                        val minPart = avgPaceMinPerKm.toInt()
+                        val secPart = ((avgPaceMinPerKm - minPart) * 60).toInt()
+                        String.format(Locale.US, "%d:%02d/km", minPart, secPart)
+                    }
+                    val speedUnit = if (useImperial) "mph" else "km/h"
+                    val avgSpeedVal = if (useImperial) activity.avgSpeedKmh * 0.621371 else activity.avgSpeedKmh
+                    val maxSpeedVal = if (useImperial) activity.maxSpeedKmh * 0.621371 else activity.maxSpeedKmh
+                    val elevVal = if (useImperial) activity.elevationGainM * 3.28084 else activity.elevationGainM
+                    val elevUnit = if (useImperial) "ft" else "m"
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Average Pace
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("AVERAGE PACE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text(avgPaceStr, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                            // Average Speed
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("AVERAGE SPEED", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text(String.format(Locale.US, "%.1f %s", avgSpeedVal, speedUnit), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Max Speed
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("MAXIMUM SPEED", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text(String.format(Locale.US, "%.1f %s", maxSpeedVal, speedUnit), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                            // Moving Time
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("MOVING TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Elapsed Time
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("ELAPSED TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text(formatElapsedTimeShort((activity.durationSeconds * 1.05).toLong()), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                            // Elevation Gain
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("ELEVATION GAIN", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text(String.format(Locale.US, "+%.0f %s", elevVal, elevUnit), fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // Calories
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("CALORIES", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text("$estCalories kcal", fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                            // GPS Accuracy
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("GPS ACCURACY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                    Text(if (points.size > 2) "High (3m)" else "Estimated", fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                }
+                            }
+                        }
+                    }
+
+                    // Splits Section
+                    Text("1 ${if (useImperial) "MILE" else "KM"} SPLITS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
+                    val splits = remember(points, useImperial) {
+                        calculateActivitySplits(points, useImperial)
+                    }
+                    if (splits.isNotEmpty()) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant.copy(alpha = 0.3f)),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("SPLIT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary, modifier = Modifier.weight(1f))
+                                    Text("DISTANCE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary, modifier = Modifier.weight(1.5f), textAlign = TextAlign.End)
+                                    Text("TIME", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary, modifier = Modifier.weight(1.5f), textAlign = TextAlign.End)
+                                    Text("PACE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary, modifier = Modifier.weight(1.5f), textAlign = TextAlign.End)
+                                    Text("AVG SPEED", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary, modifier = Modifier.weight(1.5f), textAlign = TextAlign.End)
+                                }
+                                Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                splits.forEach { split ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .background(OrangePrimary.copy(alpha = 0.15f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                "${split.splitNum}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = OrangePrimary
+                                            )
+                                        }
+                                        Text(
+                                            text = String.format(Locale.US, "%.2f %s", split.distance, if (useImperial) "mi" else "km"),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = SlateTextPrimary,
+                                            modifier = Modifier.weight(1.5f),
+                                            textAlign = TextAlign.End
+                                        )
+                                        Text(
+                                            text = formatElapsedTimeShort(split.timeSeconds),
+                                            fontSize = 11.sp,
+                                            color = SlateTextPrimary,
+                                            modifier = Modifier.weight(1.5f),
+                                            textAlign = TextAlign.End
+                                        )
+                                        Text(
+                                            text = split.paceString,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = OrangeSecondary,
+                                            modifier = Modifier.weight(1.5f),
+                                            textAlign = TextAlign.End
+                                        )
+                                        Text(
+                                            text = String.format(Locale.US, "%.1f %s", split.avgSpeedKmhOrMph, if (useImperial) "mph" else "km/h"),
+                                            fontSize = 11.sp,
+                                            color = SlateTextPrimary,
+                                            modifier = Modifier.weight(1.5f),
+                                            textAlign = TextAlign.End
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text("No splits available.", color = SlateTextSecondary, fontSize = 12.sp)
+                    }
+
+                    // Interactive Performance Graphs
+                    Text("PERFORMANCE ANALYSIS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
+                    if (points.size >= 2) {
+                        val elapsedTimes = points.map { ((it.timeMs - points.first().timeMs) / 1000.0) }
+                        val speeds = points.map {
+                            if (useImperial) it.speedMps * 2.23694 else it.speedMps * 3.6
+                        }
+                        val paces = points.map {
+                            if (it.speedMps > 0.3) {
+                                val pace = if (useImperial) (1609.34 / it.speedMps) / 60.0 else (1000.0 / it.speedMps) / 60.0
+                                pace.coerceAtMost(30.0)
+                            } else {
+                                30.0
+                            }
+                        }
+                        val cumulativeDistances = remember(points, useImperial) {
+                            var totalDist = 0.0
+                            val list = mutableListOf<Double>()
+                            list.add(0.0)
+                            for (i in 1 until points.size) {
+                                val d = SegmentMatcher.haversineM(
+                                    Pair(points[i-1].lat, points[i-1].lng),
+                                    Pair(points[i].lat, points[i].lng)
+                                )
+                                totalDist += if (useImperial) d / 1609.34 else d / 1000.0
+                                list.add(totalDist)
+                            }
+                            list
+                        }
+                        val elevations = points.map {
+                            if (useImperial) it.elevation * 3.28084 else it.elevation
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            // Pace vs Time
+                            InteractiveCanvasChart(
+                                title = "Pace vs Time",
+                                xValues = elapsedTimes,
+                                yValues = paces,
+                                xLabelFormatter = { xVal ->
+                                    val totalSec = xVal.toInt()
+                                    String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
+                                },
+                                yLabelFormatter = { yVal ->
+                                    val minPart = yVal.toInt()
+                                    val secPart = ((yVal - minPart) * 60).toInt()
+                                    String.format(Locale.US, "%d:%02d/%s", minPart, secPart, if (useImperial) "mi" else "km")
+                                },
+                                lineColor = OrangePrimary,
+                                modifier = Modifier.fillMaxWidth().height(220.dp)
+                            )
+
+                            // Speed vs Time
+                            InteractiveCanvasChart(
+                                title = "Speed vs Time",
+                                xValues = elapsedTimes,
+                                yValues = speeds,
+                                xLabelFormatter = { xVal ->
+                                    val totalSec = xVal.toInt()
+                                    String.format(Locale.US, "%d:%02d", totalSec / 60, totalSec % 60)
+                                },
+                                yLabelFormatter = { yVal ->
+                                    String.format(Locale.US, "%.1f %s", yVal, if (useImperial) "mph" else "km/h")
+                                },
+                                lineColor = NeonTealAccent,
+                                modifier = Modifier.fillMaxWidth().height(220.dp)
+                            )
+
+                            // Elevation vs Distance
+                            val hasElevation = elevations.any { it > 0.0 }
+                            if (hasElevation) {
+                                InteractiveCanvasChart(
+                                    title = "Elevation vs Distance",
+                                    xValues = cumulativeDistances,
+                                    yValues = elevations,
+                                    xLabelFormatter = { xVal ->
+                                        String.format(Locale.US, "%.2f %s", xVal, if (useImperial) "mi" else "km")
+                                    },
+                                    yLabelFormatter = { yVal ->
+                                        String.format(Locale.US, "%.0f %s", yVal, if (useImperial) "ft" else "m")
+                                    },
+                                    lineColor = OrangeTertiary,
+                                    modifier = Modifier.fillMaxWidth().height(220.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Text("No chart data available.", color = SlateTextSecondary, fontSize = 12.sp)
+                    }
+
+                    // Share Activity
+                    Text("EXPORT & SHARE", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                        Button(
+                            onClick = { ExportUtils.exportGPX(context, activity) },
+                            colors = ButtonDefaults.buttonColors(containerColor = SlateCardSurfaceVariant),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).height(44.dp).testTag("export_gpx_button")
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text("DISTANCE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                val distStr = if (useImperial) {
-                                    String.format(Locale.US, "%.2f mi", activity.distanceKm * 0.621371)
-                                } else {
-                                    String.format(Locale.US, "%.2f km", activity.distanceKm)
-                                }
-                                Text(distStr, fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                            }
+                            Text("GPX", color = SlateTextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                        Button(
+                            onClick = { ExportUtils.exportSingleCSV(context, activity) },
+                            colors = ButtonDefaults.buttonColors(containerColor = SlateCardSurfaceVariant),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).height(44.dp).testTag("export_csv_button")
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text("ELEVATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                val elevStr = if (useImperial) {
-                                    String.format(Locale.US, "+%.0f ft", activity.elevationGainM * 3.28084)
-                                } else {
-                                    String.format(Locale.US, "+%.0f m", activity.elevationGainM)
-                                }
-                                Text(elevStr, fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                            }
+                            Text("CSV", color = SlateTextPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
+                        Button(
+                            onClick = { ExportUtils.exportSummaryImage(context, activity) },
+                            colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                             shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1.2f).height(44.dp).testTag("share_image_button")
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text("DURATION", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                Text(formatElapsedTimeShort(activity.durationSeconds), fontSize = 15.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                            }
+                            Text("Share Card", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
 
-                    if (activity.notes.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text("DESCRIPTION", fontSize = 10.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 0.5.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = activity.notes,
-                            fontSize = 13.sp,
-                            color = SlateTextPrimary,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(SlateCardSurfaceVariant.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
-                                .padding(12.dp)
-                        )
+                    // Delete Button
+                    Button(
+                        onClick = { showDeleteConfirmation = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0x1CEF4444)),
+                        border = BorderStroke(1.dp, Color(0x66EF4444)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("delete_activity_button")
+                    ) {
+                        Text("Delete Activity", color = Color(0xFFEF4444), fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
 
-                    if (efforts.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text("MATCHED SEGMENTS", fontSize = 10.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 0.5.sp)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            efforts.forEach { effort ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(SlateCardSurfaceVariant, RoundedCornerShape(8.dp))
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(if (effort.isPr) "🥇" else "⏱️", fontSize = 16.sp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Column {
-                                            Text(effort.segmentName, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = SlateTextPrimary)
-                                            Text("Avg Speed: ${String.format(Locale.US, "%.1f km/h", effort.avgSpeedMps * 3.6)}", fontSize = 10.sp, color = SlateTextSecondary)
-                                        }
-                                    }
-                                    Text(
-                                        text = "${(effort.elapsedTimeSeconds / 60).toInt()}m ${(effort.elapsedTimeSeconds % 60).toInt()}s",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = SlateTextPrimary
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                // Done Button
                 Button(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),

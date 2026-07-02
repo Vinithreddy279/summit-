@@ -12,9 +12,13 @@ import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.data.GPSPoint
 import com.example.data.SegmentMatcher
+import com.example.data.AppDatabase
+import com.example.data.SessionManager
+import com.example.data.JsonHelper
 import com.google.android.gms.location.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -29,6 +33,13 @@ class TrackingService : Service() {
     private var lastLocation: Location? = null
     private var simulationIndex = 0
     private val random = Random(42)
+
+    // Upgraded recording engine states
+    private var userWeightKg = 70.0
+    private var lastMovementTimeMs = System.currentTimeMillis()
+    private val recentSpeeds = mutableListOf<Double>()
+    private var smoothedSpeedKmh = 0.0
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     companion object {
         const val NOTIFICATION_ID = 888
@@ -109,37 +120,113 @@ class TrackingService : Service() {
             gpsAccuracyMeters.value = 0.0
             caloriesBurned.value = 0.0
         }
+
+        fun restoreActiveStateFromPrefs(context: Context): Boolean {
+            val prefs = context.getSharedPreferences("summit_active_workout", Context.MODE_PRIVATE)
+            val recording = prefs.getBoolean("is_recording", false)
+            if (recording) {
+                isRecording.value = true
+                isPaused.value = prefs.getBoolean("is_paused", false)
+                isAutoPaused.value = prefs.getBoolean("is_auto_paused", false)
+                currentSportType.value = prefs.getString("sport_type", "run") ?: "run"
+                selectedSimulationRoute.value = prefs.getString("simulation_route", "None") ?: "None"
+                durationSeconds.value = prefs.getLong("duration_seconds", 0L)
+                distanceKm.value = prefs.getFloat("distance_km", 0f).toDouble()
+                caloriesBurned.value = prefs.getFloat("calories", 0f).toDouble()
+                val pointsJson = prefs.getString("points_json", "") ?: ""
+                if (pointsJson.isNotEmpty()) {
+                    try {
+                        trackpoints.value = JsonHelper.jsonToPoints(pointsJson)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+                return true
+            }
+            return false
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
         createNotificationChannel()
+
+        // Acquire WakeLock to maintain tracking when screen is off
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Summit::TrackingWakeLock").apply {
+                acquire()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Load user's weight from Room dynamically
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                val sessionManager = SessionManager(applicationContext)
+                val email = sessionManager.userEmailFlow.firstOrNull()
+                if (!email.isNullOrEmpty()) {
+                    val db = AppDatabase.getDatabase(applicationContext)
+                    val user = db.userDao().getUserByEmail(email)
+                    if (user != null) {
+                        userWeightKg = user.weightKg
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.let {
-            when (it.action) {
-                ACTION_START -> {
-                    val sport = it.getStringExtra("SPORT_TYPE") ?: "run"
-                    val simulation = it.getStringExtra("SIMULATION_ROUTE") ?: "None"
-                    val autoPause = it.getBooleanExtra("AUTO_PAUSE", false)
-                    
-                    currentSportType.value = sport
-                    selectedSimulationRoute.value = simulation
-                    autoPauseSetting.value = autoPause
-                    
-                    startTracking()
-                }
-                ACTION_PAUSE -> {
-                    isPaused.value = true
-                }
-                ACTION_RESUME -> {
-                    isPaused.value = false
-                    isAutoPaused.value = false
-                }
-                ACTION_STOP -> {
-                    stopTracking()
+        if (intent == null) {
+            // Service killed and restarted by system: restore active state
+            val restored = restoreActiveStateFromPrefs(this)
+            if (restored && isRecording.value) {
+                startTracking(isRestore = true)
+            } else {
+                stopSelf()
+            }
+        } else {
+            intent.let {
+                when (it.action) {
+                    ACTION_START -> {
+                        val isRestore = it.getBooleanExtra("IS_RESTORE", false)
+                        if (isRestore) {
+                            startTracking(isRestore = true)
+                        } else {
+                            val sport = it.getStringExtra("SPORT_TYPE") ?: "run"
+                            val simulation = it.getStringExtra("SIMULATION_ROUTE") ?: "None"
+                            val autoPause = it.getBooleanExtra("AUTO_PAUSE", false)
+                            
+                            currentSportType.value = sport
+                            selectedSimulationRoute.value = simulation
+                            autoPauseSetting.value = autoPause
+                            
+                            startTracking(isRestore = false)
+                        }
+                    }
+                    ACTION_PAUSE -> {
+                        isPaused.value = true
+                        removeLocationUpdates() // stop GPS to save battery when manually paused
+                        saveActiveStateToPrefs()
+                        vibrate(applicationContext, 200L) // Double pulse pattern for pause
+                    }
+                    ACTION_RESUME -> {
+                        isPaused.value = false
+                        isAutoPaused.value = false
+                        lastMovementTimeMs = System.currentTimeMillis()
+                        if (selectedSimulationRoute.value == "None") {
+                            startLocationUpdates() // resume GPS
+                        }
+                        saveActiveStateToPrefs()
+                        vibrate(applicationContext, 400L) // Long vibration for resume
+                    }
+                    ACTION_STOP -> {
+                        stopTracking()
+                    }
                 }
             }
         }
@@ -148,17 +235,24 @@ class TrackingService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startTracking() {
-        resetStates()
+    private fun startTracking(isRestore: Boolean = false) {
+        if (isRestore) {
+            restoreActiveStateFromPrefs(this)
+        } else {
+            resetStates()
+            simulationIndex = 0
+            lastLocation = null
+        }
         isRecording.value = true
-        simulationIndex = 0
-        lastLocation = null
+        lastMovementTimeMs = System.currentTimeMillis()
+        recentSpeeds.clear()
+        smoothedSpeedKmh = if (trackpoints.value.isNotEmpty()) currentSpeedKmh.value else 0.0
 
         // Start Foreground Service with notification
         startForeground(NOTIFICATION_ID, buildNotification("Starting Summit Tracker..."))
 
         // Register Real GPS Location Client if simulation is None
-        if (selectedSimulationRoute.value == "None") {
+        if (selectedSimulationRoute.value == "None" && !isPaused.value && !isAutoPaused.value) {
             startLocationUpdates()
         }
 
@@ -173,14 +267,35 @@ class TrackingService : Service() {
                     if (simRoute != null && simRoute != "None") {
                         simulateStep()
                     } else {
-                        // Real location mode: If we haven't got location update, we don't update coordinates.
-                        // However, we can update elapsed time and other stats.
+                        // Real location mode: Check stationary condition for auto-pause (10 seconds)
+                        val elapsedStationary = System.currentTimeMillis() - lastMovementTimeMs
+                        if (autoPauseSetting.value && elapsedStationary > 10000L) {
+                            isAutoPaused.value = true
+                            currentSpeedKmh.value = 0.0
+                            smoothedSpeedKmh = 0.0
+                            triggerDoubleVibration() // Auto pause vibration feedback
+                            saveActiveStateToPrefs()
+                        }
                     }
+                    
+                    // High-accuracy calorie tracking per second based on MET, weight, speed
+                    val met = getMetValue(currentSportType.value, currentSpeedKmh.value)
+                    val calPerSec = (met * 3.5 * userWeightKg) / (200.0 * 60.0)
+                    caloriesBurned.value += calPerSec
+
                     updateStats()
                     updateNotification()
+
+                    // Periodically auto-save state to prefs to handle unexpected closes safely
+                    if (durationSeconds.value % 5 == 0L) {
+                        saveActiveStateToPrefs()
+                    }
                 }
             }
         }
+
+        // Trigger Start vibration
+        vibrate(applicationContext, 300L)
     }
 
     @SuppressLint("MissingPermission")
@@ -196,59 +311,79 @@ class TrackingService : Service() {
                     if (isPaused.value || !isRecording.value) return
                     
                     val location = result.lastLocation ?: return
-                    gpsAccuracyMeters.value = location.accuracy.toDouble()
+                    val accuracy = location.accuracy
+                    gpsAccuracyMeters.value = accuracy.toDouble()
                     
-                    // Auto pause check
+                    // 1. High-accuracy GPS filtering: ignore points with poor accuracy (> 20 meters)
+                    if (accuracy > 20f) return
+                    
                     val speedMps = location.speed
                     val speedKmhValue = speedMps * 3.6
                     
-                    if (autoPauseSetting.value && speedKmhValue < 1.5) {
-                        isAutoPaused.value = true
-                        currentSpeedKmh.value = 0.0
-                        return
-                    } else if (isAutoPaused.value && speedKmhValue >= 2.0) {
-                        isAutoPaused.value = false
-                    }
-
-                    if (isAutoPaused.value) return
-
-                    // Interpolate/smooth jumping GPS coordinates
-                    val filteredLocation = if (lastLocation != null) {
-                        val distance = location.distanceTo(lastLocation!!)
-                        if (distance > 40.0 && location.accuracy > 20f) {
-                            // High probability of GPS jump, smooth/interpolate it
-                            val alpha = 0.3f
-                            Location(location).apply {
-                                latitude = alpha * location.latitude + (1 - alpha) * lastLocation!!.latitude
-                                longitude = alpha * location.longitude + (1 - alpha) * lastLocation!!.longitude
-                            }
+                    // Check if movement resumed to auto-resume
+                    if (isAutoPaused.value) {
+                        if (speedMps >= 0.6) { // > 2.16 km/h
+                            isAutoPaused.value = false
+                            lastMovementTimeMs = System.currentTimeMillis()
+                            vibrate(applicationContext, 400L) // Auto resume vibration
                         } else {
-                            location
+                            // Still stationary
+                            currentSpeedKmh.value = 0.0
+                            return
                         }
-                    } else {
-                        location
                     }
-
-                    // Calculate distance
-                    if (lastLocation != null) {
-                        val distanceDeltaM = filteredLocation.distanceTo(lastLocation!!)
+                    
+                    // 2. Ignore duplicate points and GPS jumps
+                    val lastLoc = lastLocation
+                    if (lastLoc != null) {
+                        val distanceDeltaM = location.distanceTo(lastLoc)
+                        val timeDeltaSec = (location.time - lastLoc.time) / 1000.0
+                        
+                        // Ignore exact duplicates or tiny GPS drift while standing still (< 1.2m)
+                        if (distanceDeltaM < 1.2) {
+                            return
+                        }
+                        
+                        // Ignore massive GPS jumps (speed of jump > 35 m/s = 126 km/h) with moderate/high accuracy
+                        if (timeDeltaSec > 0.0) {
+                            val calculatedSpeed = distanceDeltaM / timeDeltaSec
+                            if (calculatedSpeed > 35.0 && accuracy > 12f) {
+                                // Clear jump, ignore this location
+                                return
+                            }
+                        }
+                        
+                        // 3. Increment distance
                         distanceKm.value += (distanceDeltaM / 1000.0)
                     }
+                    
+                    lastLocation = location
+                    lastMovementTimeMs = System.currentTimeMillis()
+                    
+                    // Low-pass EMA filter for smoothing current speed updates
+                    val instantSpeed = location.speed * 3.6
+                    smoothedSpeedKmh = if (smoothedSpeedKmh == 0.0) instantSpeed else (0.7 * smoothedSpeedKmh + 0.3 * instantSpeed)
+                    currentSpeedKmh.value = smoothedSpeedKmh
 
-                    lastLocation = filteredLocation
-                    currentSpeedKmh.value = filteredLocation.speed * 3.6
+                    // Add current speed to sliding window for smooth pace calculation
+                    recentSpeeds.add(location.speed.toDouble())
+                    if (recentSpeeds.size > 5) {
+                        recentSpeeds.removeAt(0)
+                    }
 
                     // Append point
                     val pts = trackpoints.value.toMutableList()
                     val point = GPSPoint(
-                        lat = filteredLocation.latitude,
-                        lng = filteredLocation.longitude,
-                        elevation = filteredLocation.altitude,
+                        lat = location.latitude,
+                        lng = location.longitude,
+                        elevation = location.altitude,
                         timeMs = System.currentTimeMillis(),
-                        speedMps = filteredLocation.speed.toDouble()
+                        speedMps = location.speed.toDouble()
                     )
                     pts.add(point)
                     trackpoints.value = pts
+                    
+                    saveActiveStateToPrefs()
                 }
             }
 
@@ -262,14 +397,27 @@ class TrackingService : Service() {
         }
     }
 
-    private fun stopTracking() {
-        isRecording.value = false
+    private fun removeLocationUpdates() {
         locationCallback?.let {
             fusedLocationClient.removeLocationUpdates(it)
+        }
+    }
+
+    private fun stopTracking() {
+        isRecording.value = false
+        clearActiveStatePrefs()
+        removeLocationUpdates()
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+            }
         }
         serviceJob.cancel()
         stopForeground(true)
         stopSelf()
+
+        // Trigger Finish vibration
+        vibrate(applicationContext, 600L)
     }
 
     override fun onDestroy() {
@@ -293,12 +441,13 @@ class TrackingService : Service() {
             val noiseLng = random.nextDouble(-0.00001, 0.00001)
             val finalCoord = Pair(baseCoord.first + noiseLat, baseCoord.second + noiseLng)
 
+            val speedMpsValue = paceMps + random.nextDouble(-0.5, 0.5)
             val point = GPSPoint(
                 lat = finalCoord.first,
                 lng = finalCoord.second,
                 elevation = 15.0 + (simulationIndex * 5.0),
                 timeMs = System.currentTimeMillis(),
-                speedMps = paceMps + random.nextDouble(-0.5, 0.5)
+                speedMps = speedMpsValue
             )
 
             if (pts.isNotEmpty()) {
@@ -309,11 +458,23 @@ class TrackingService : Service() {
 
             pts.add(point)
             trackpoints.value = pts
-            currentSpeedKmh.value = point.speedMps * 3.6
+            
+            // Speed smoothing
+            val instantSpeed = speedMpsValue * 3.6
+            smoothedSpeedKmh = if (smoothedSpeedKmh == 0.0) instantSpeed else (0.7 * smoothedSpeedKmh + 0.3 * instantSpeed)
+            currentSpeedKmh.value = smoothedSpeedKmh
+
+            // Sliding window pace speed
+            recentSpeeds.add(speedMpsValue)
+            if (recentSpeeds.size > 5) {
+                recentSpeeds.removeAt(0)
+            }
+
             gpsAccuracyMeters.value = random.nextDouble(1.5, 3.2)
             simulationIndex++
+            lastMovementTimeMs = System.currentTimeMillis()
         } else {
-            // Stand-by or slow motion at end point
+            // Stand-by or slow motion at end point (stationary)
             val baseCoord = coordinates.last()
             val noiseLat = random.nextDouble(-0.000005, 0.000005)
             val noiseLng = random.nextDouble(-0.000005, 0.000005)
@@ -328,7 +489,10 @@ class TrackingService : Service() {
             )
             pts.add(point)
             trackpoints.value = pts
+            
             currentSpeedKmh.value = 0.0
+            smoothedSpeedKmh = 0.0
+            recentSpeeds.clear()
             gpsAccuracyMeters.value = random.nextDouble(1.1, 1.8)
         }
     }
@@ -340,23 +504,13 @@ class TrackingService : Service() {
         // Average Speed
         avgSpeedKmh.value = if (sec > 0) (dist / (sec / 3600.0)) else 0.0
 
-        // Current Pace
-        val currentSpeedMps = currentSpeedKmh.value / 3.6
-        currentPaceString.value = formatPace(currentSpeedMps)
+        // Current Pace: Smoothed with sliding window
+        val avgCurrentSpeedMps = if (recentSpeeds.isNotEmpty()) recentSpeeds.average() else (currentSpeedKmh.value / 3.6)
+        currentPaceString.value = formatPace(avgCurrentSpeedMps)
 
         // Average Pace
-        val avgSpeedMps = (dist * 1000.0) / sec
+        val avgSpeedMps = if (dist > 0) (dist * 1000.0) / sec else 0.0
         avgPaceString.value = formatPace(avgSpeedMps)
-
-        // Calories
-        val burnRate = when (currentSportType.value) {
-            "run" -> 68.0
-            "ride" -> 32.0
-            "walk" -> 44.0
-            "hike" -> 58.0
-            else -> 50.0
-        }
-        caloriesBurned.value = dist * burnRate
     }
 
     private fun formatPace(speedMps: Double): String {
@@ -366,6 +520,64 @@ class TrackingService : Service() {
         val s = secondsPerKm % 60
         if (m > 99) return "99:59"
         return String.format("%02d:%02d", m, s)
+    }
+
+    private fun getMetValue(sportType: String, speedKmh: Double): Double {
+        if (speedKmh < 0.5) return 1.0 // Stationary (Resting BMR)
+        return when (sportType.lowercase()) {
+            "run" -> {
+                when {
+                    speedKmh < 6.4 -> 6.0
+                    speedKmh < 8.0 -> 8.3
+                    speedKmh < 9.6 -> 9.8
+                    speedKmh < 11.2 -> 11.0
+                    speedKmh < 12.8 -> 11.8
+                    else -> 12.8
+                }
+            }
+            "ride" -> {
+                when {
+                    speedKmh < 15.0 -> 4.0
+                    speedKmh < 20.0 -> 6.0
+                    speedKmh < 25.0 -> 8.0
+                    speedKmh < 30.0 -> 10.0
+                    else -> 12.0
+                }
+            }
+            "walk" -> {
+                when {
+                    speedKmh < 3.2 -> 2.0
+                    speedKmh < 4.8 -> 3.3
+                    speedKmh < 6.4 -> 4.3
+                    else -> 5.0
+                }
+            }
+            "hike" -> {
+                if (speedKmh < 4.0) 6.0 else 7.5
+            }
+            else -> 6.0
+        }
+    }
+
+    private fun saveActiveStateToPrefs() {
+        val prefs = getSharedPreferences("summit_active_workout", Context.MODE_PRIVATE)
+        prefs.edit().apply {
+            putBoolean("is_recording", isRecording.value)
+            putBoolean("is_paused", isPaused.value)
+            putBoolean("is_auto_paused", isAutoPaused.value)
+            putString("sport_type", currentSportType.value)
+            putString("simulation_route", selectedSimulationRoute.value ?: "None")
+            putLong("duration_seconds", durationSeconds.value)
+            putFloat("distance_km", distanceKm.value.toFloat())
+            putFloat("calories", caloriesBurned.value.toFloat())
+            putString("points_json", JsonHelper.pointsToJson(trackpoints.value))
+            apply()
+        }
+    }
+
+    private fun clearActiveStatePrefs() {
+        val prefs = getSharedPreferences("summit_active_workout", Context.MODE_PRIVATE)
+        prefs.edit().clear().apply()
     }
 
     private fun getSimulationRouteCoordinates(route: String): List<Pair<Double, Double>> {
@@ -492,6 +704,30 @@ class TrackingService : Service() {
             String.format("%d:%02d:%02d", h, m, s)
         } else {
             String.format("%02d:%02d", m, s)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun vibrate(context: Context, durationMs: Long) {
+        try {
+            val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(android.os.VibrationEffect.createOneShot(durationMs, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    vibrator.vibrate(durationMs)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun triggerDoubleVibration() {
+        serviceScope.launch {
+            vibrate(applicationContext, 150L)
+            delay(250L)
+            vibrate(applicationContext, 150L)
         }
     }
 }

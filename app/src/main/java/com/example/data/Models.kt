@@ -34,7 +34,8 @@ data class Activity(
     val kudosCount: Int = 0,
     val isKudosedByMe: Boolean = false,
     val notes: String = "",
-    val privacy: String = "Public" // "Public", "Friends Only", "Private"
+    val privacy: String = "Public", // "Public", "Friends Only", "Private"
+    val isFavorite: Boolean = false
 ) : Serializable
 
 @Entity(tableName = "segments")

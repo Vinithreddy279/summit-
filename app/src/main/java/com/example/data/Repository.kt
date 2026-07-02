@@ -149,6 +149,21 @@ class SummitRepository(private val db: AppDatabase) {
     }
 
     // User Operations
+    suspend fun updateActivity(activity: Activity) = activityDao.updateActivity(activity)
+    
+    suspend fun deleteActivity(activity: Activity) {
+        activityDao.deleteActivity(activity)
+        try {
+            val posts = feedPostDao.getAllPosts().first()
+            val linkedPost = posts.find { it.activityId == activity.id }
+            if (linkedPost != null) {
+                feedPostDao.deletePost(linkedPost)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     suspend fun getUserByEmail(email: String): User? = userDao.getUserByEmail(email)
     fun observeUserByEmail(email: String): Flow<User?> = userDao.observeUserByEmail(email)
     suspend fun insertUser(user: User): Long = userDao.insertUser(user)

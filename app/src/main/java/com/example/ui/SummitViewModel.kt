@@ -1,9 +1,12 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Intent
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -128,7 +131,7 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     private val _recordingDistanceKm = MutableStateFlow(0.0)
     val recordingDistanceKm: StateFlow<Double> = _recordingDistanceKm.asStateFlow()
 
-    private val _recordingSportType = MutableStateFlow("run") // "run", "ride", "hike", "walk", "swim"
+    private val _recordingSportType = MutableStateFlow("") // "run", "ride", "hike", "walk", "swim"
     val recordingSportType: StateFlow<String> = _recordingSportType.asStateFlow()
 
     private val _recordingGearId = MutableStateFlow<Int?>(null)
@@ -191,6 +194,24 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
             val existingSegments = repository.segments.first()
             if (existingSegments.isEmpty()) {
                 seedDatabase()
+            }
+        }
+
+        // Attempt to restore active workout state from SharedPreferences on VM startup
+        viewModelScope.launch(Dispatchers.Main) {
+            val restored = TrackingService.restoreActiveStateFromPrefs(getApplication())
+            if (restored) {
+                if (TrackingService.isRecording.value && !TrackingService.isPaused.value) {
+                    val intent = Intent(getApplication(), TrackingService::class.java).apply {
+                        action = TrackingService.ACTION_START
+                        putExtra("IS_RESTORE", true)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        getApplication<Application>().startForegroundService(intent)
+                    } else {
+                        getApplication<Application>().startService(intent)
+                    }
+                }
             }
         }
 
@@ -900,6 +921,24 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
             _appFlow.value = AppFlow.LOGIN
             triggerNotification("Account Deleted ⚠️", "Your account has been deleted.")
             onSuccess()
+        }
+    }
+
+    fun updateActivity(activity: Activity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateActivity(activity)
+            if (_selectedActivity.value?.id == activity.id) {
+                _selectedActivity.value = activity
+            }
+        }
+    }
+
+    fun deleteActivity(activity: Activity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteActivity(activity)
+            if (_selectedActivity.value?.id == activity.id) {
+                _selectedActivity.value = null
+            }
         }
     }
 }

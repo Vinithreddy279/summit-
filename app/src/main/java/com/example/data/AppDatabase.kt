@@ -41,6 +41,9 @@ interface ActivityDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertActivity(activity: Activity): Long
 
+    @Update
+    suspend fun updateActivity(activity: Activity)
+
     @Delete
     suspend fun deleteActivity(activity: Activity)
 }
@@ -109,7 +112,7 @@ interface FeedCommentDao {
         FeedComment::class,
         User::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
