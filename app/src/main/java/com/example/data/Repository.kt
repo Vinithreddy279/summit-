@@ -11,15 +11,23 @@ class SummitRepository(private val db: AppDatabase) {
     private val feedPostDao = db.feedPostDao()
     private val feedCommentDao = db.feedCommentDao()
     private val userDao = db.userDao()
+    private val routeDao = db.routeDao()
 
     val gears: Flow<List<Gear>> = gearDao.getAllGears()
     val activities: Flow<List<Activity>> = activityDao.getAllActivities()
     val segments: Flow<List<Segment>> = segmentDao.getAllSegments()
     val feedPosts: Flow<List<FeedPost>> = feedPostDao.getAllPosts()
+    val routes: Flow<List<Route>> = routeDao.getAllRoutes()
 
     fun getComments(postId: Long): Flow<List<FeedComment>> = feedCommentDao.getCommentsForPost(postId)
     fun getEffortsForActivity(activityId: Long): Flow<List<SegmentEffort>> = segmentEffortDao.getEffortsForActivity(activityId)
     fun getEffortsForSegment(segmentId: String): Flow<List<SegmentEffort>> = segmentEffortDao.getEffortsForSegment(segmentId)
+
+    // Route Actions
+    suspend fun getRouteById(id: Long): Route? = routeDao.getRouteById(id)
+    suspend fun insertRoute(route: Route): Long = routeDao.insertRoute(route)
+    suspend fun updateRoute(route: Route) = routeDao.updateRoute(route)
+    suspend fun deleteRoute(route: Route) = routeDao.deleteRoute(route)
 
     // Gear Actions
     suspend fun insertGear(gear: Gear): Long = gearDao.insertGear(gear)

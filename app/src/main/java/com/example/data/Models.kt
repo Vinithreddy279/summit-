@@ -97,3 +97,19 @@ data class FeedComment(
     val commentText: String,
     val timestamp: Long = System.currentTimeMillis()
 ) : Serializable
+
+@Entity(tableName = "routes")
+data class Route(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val activityType: String, // "run", "ride", "hike", "walk"
+    val routePointsJson: String, // List of GPS points: [{"lat":..., "lng":..., "ts":...}]
+    val distanceKm: Double,
+    val durationSeconds: Long,
+    val elevationGainM: Double = 0.0,
+    val difficulty: String = "Easy", // "Easy", "Moderate", "Hard", "Expert"
+    val notes: String = "",
+    val isFavorite: Boolean = false,
+    val dateCreated: Long = System.currentTimeMillis()
+) : Serializable
+

@@ -3996,13 +3996,14 @@ fun RecordScreen(viewModel: SummitViewModel) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             SportSelectorButton(
                                 label = "Run",
                                 icon = Icons.Filled.DirectionsRun,
                                 selected = sportType == "run",
                                 color = RunColor,
+                                modifier = Modifier.weight(1f),
                                 onClick = { viewModel.setRecordingSportType("run") }
                             )
                             SportSelectorButton(
@@ -4010,6 +4011,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                                 icon = Icons.Filled.DirectionsBike,
                                 selected = sportType == "ride",
                                 color = RideColor,
+                                modifier = Modifier.weight(1f),
                                 onClick = { viewModel.setRecordingSportType("ride") }
                             )
                             SportSelectorButton(
@@ -4017,7 +4019,16 @@ fun RecordScreen(viewModel: SummitViewModel) {
                                 icon = Icons.Filled.DirectionsWalk,
                                 selected = sportType == "walk",
                                 color = WalkColor,
+                                modifier = Modifier.weight(1f),
                                 onClick = { viewModel.setRecordingSportType("walk") }
+                            )
+                            SportSelectorButton(
+                                label = "Hike",
+                                icon = Icons.Filled.Terrain,
+                                selected = sportType == "hike",
+                                color = HikeColor,
+                                modifier = Modifier.weight(1f),
+                                onClick = { viewModel.setRecordingSportType("hike") }
                             )
                         }
                     }
@@ -4602,9 +4613,16 @@ fun RecordScreen(viewModel: SummitViewModel) {
 }
 
 @Composable
-fun SportSelectorButton(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, selected: Boolean, color: Color, onClick: () -> Unit) {
+fun SportSelectorButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .background(if (selected) color.copy(alpha = 0.2f) else SlateCardSurfaceVariant)
             .border(
@@ -4613,13 +4631,13 @@ fun SportSelectorButton(label: String, icon: androidx.compose.ui.graphics.vector
                 RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 8.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = label, tint = if (selected) color else SlateTextSecondary, modifier = Modifier.size(18.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(label, fontWeight = FontWeight.Bold, color = if (selected) color else SlateTextSecondary, fontSize = 13.sp)
+            Icon(icon, contentDescription = label, tint = if (selected) color else SlateTextSecondary, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(label, fontWeight = FontWeight.Bold, color = if (selected) color else SlateTextSecondary, fontSize = 12.sp)
         }
     }
 }
@@ -5338,7 +5356,7 @@ fun SegmentsScreen(viewModel: SummitViewModel) {
     val activities by viewModel.activities.collectAsStateWithLifecycle()
     val useImperial by viewModel.useImperial.collectAsStateWithLifecycle()
 
-    var activeSubTab by remember { mutableStateOf("history") } // "history" or "segments"
+    var activeSubTab by remember { mutableStateOf("history") } // "history", "segments" or "routes"
     var selectedSegmentId by remember { mutableStateOf<String?>(null) }
     val selectedSegment = segments.find { it.id == selectedSegmentId }
 
@@ -5364,8 +5382,9 @@ fun SegmentsScreen(viewModel: SummitViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 listOf(
-                    "history" to "ACTIVITY HISTORY",
-                    "segments" to "PREDEFINED SEGMENTS"
+                    "history" to "HISTORY",
+                    "segments" to "SEGMENTS",
+                    "routes" to "EXPLORER"
                 ).forEach { (tabId, tabName) ->
                     val selected = activeSubTab == tabId
                     Box(
@@ -5388,8 +5407,9 @@ fun SegmentsScreen(viewModel: SummitViewModel) {
                 }
             }
 
-            if (activeSubTab == "history") {
-                // Activity History layout
+            when (activeSubTab) {
+                "history" -> {
+                    // Activity History layout
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -5554,8 +5574,9 @@ fun SegmentsScreen(viewModel: SummitViewModel) {
                         }
                     }
                 }
-            } else {
-                // Main Listing of Predefined Segments
+            }
+            "segments" -> {
+                    // Main Listing of Predefined Segments
                 Text(
                     text = "Predefined Segments",
                     fontSize = 24.sp,
@@ -5624,6 +5645,10 @@ fun SegmentsScreen(viewModel: SummitViewModel) {
                         }
                     }
                 }
+            }
+            "routes" -> {
+                RouteExplorerScreen(viewModel = viewModel)
+            }
             }
         } else {
             // Segment Detail and Leaderboard
@@ -7009,6 +7034,31 @@ fun PremiumOSMMapView(
     }
 }
 
+data class HikingAnalytics(
+    val hasElevation: Boolean,
+    val elevationGain: Double,
+    val elevationLoss: Double,
+    val highestElevation: Double,
+    val lowestElevation: Double,
+    val averageGrade: Double,
+    val maxGrade: Double,
+    val estimatedHikingTimeSeconds: Long,
+    val trailDifficulty: String,
+    val averageHikingSpeed: Double,
+    val restStops: Int,
+    val summitReached: Boolean
+)
+
+fun formatHikingTime(seconds: Long): String {
+    val hours = seconds / 3600
+    val minutes = (seconds % 3600) / 60
+    return if (hours > 0) {
+        "${hours}h ${minutes}m"
+    } else {
+        "${minutes}m"
+    }
+}
+
 @Composable
 fun ActivityDetailDialog(
     activity: com.example.data.Activity,
@@ -7040,6 +7090,93 @@ fun ActivityDetailDialog(
             "swim" -> ((activity.durationSeconds / 3600.0) * 600).toInt()
             else -> (activity.distanceKm * 50).toInt()
         }
+    }
+
+    val isHike = remember(activity.sportType) { activity.sportType.lowercase() == "hike" }
+
+    val hikingStats = remember(points, activity, useImperial) {
+        val elevations = points.map { it.elevation }
+        val elevationAvailable = points.isNotEmpty() && elevations.any { it != 0.0 }
+        
+        var gain = 0.0
+        var loss = 0.0
+        var maxGradeVal = 0.0
+        for (i in 1 until points.size) {
+            val p1 = points[i-1]
+            val p2 = points[i]
+            val diff = p2.elevation - p1.elevation
+            if (diff > 0) gain += diff else loss += -diff
+            
+            val runM = com.example.data.SegmentMatcher.haversineM(p1.latlng, p2.latlng)
+            if (runM > 8.0) {
+                val grade = (diff / runM) * 100.0
+                if (grade > maxGradeVal) {
+                    maxGradeVal = grade
+                }
+            }
+        }
+        val finalGain = if (gain > 0.0) gain else activity.elevationGainM
+        
+        val highestEle = if (elevationAvailable) elevations.maxOrNull() ?: 0.0 else 0.0
+        val lowestEle = if (elevationAvailable) elevations.minOrNull() ?: 0.0 else 0.0
+        
+        val avgGrade = if (activity.distanceKm > 0.0) (finalGain / (activity.distanceKm * 1000.0)) * 100.0 else 0.0
+        
+        // Naismith's Rule: 4.0 km/h flat + 1 hour per 600m ascent
+        val estTimeSeconds = if (activity.distanceKm > 0.0) {
+            ((activity.distanceKm / 4.0) * 3600.0 + (finalGain / 600.0) * 3600.0).toLong()
+        } else {
+            0L
+        }
+        
+        val difficulty = when {
+            activity.distanceKm < 3.0 && (!elevationAvailable || finalGain < 100.0) -> "Easy"
+            activity.distanceKm < 8.0 && (!elevationAvailable || finalGain < 300.0) -> "Moderate"
+            activity.distanceKm < 15.0 && (!elevationAvailable || finalGain < 800.0) -> "Hard"
+            else -> "Expert"
+        }
+        
+        val avgSpeed = if (activity.durationSeconds > 0) activity.distanceKm / (activity.durationSeconds / 3600.0) else 0.0
+        
+        // Rest stops
+        var stops = 0
+        var stopStartIdx = -1
+        for (i in points.indices) {
+            val p = points[i]
+            if (p.speedMps < 0.25) {
+                if (stopStartIdx == -1) {
+                    stopStartIdx = i
+                } else {
+                    val duration = (p.timeMs - points[stopStartIdx].timeMs) / 1000L
+                    if (duration >= 30L) {
+                        stops++
+                        stopStartIdx = -1
+                    }
+                }
+            } else {
+                stopStartIdx = -1
+            }
+        }
+        if (stops == 0 && points.size > 10) {
+            stops = (points.count { it.speedMps < 0.1 } / 5).coerceAtMost(4)
+        }
+        
+        val isSummitReached = elevationAvailable && finalGain >= 120.0 && highestEle >= 150.0
+        
+        HikingAnalytics(
+            hasElevation = elevationAvailable,
+            elevationGain = finalGain,
+            elevationLoss = loss,
+            highestElevation = highestEle,
+            lowestElevation = lowestEle,
+            averageGrade = avgGrade,
+            maxGrade = maxGradeVal.coerceAtLeast(0.0),
+            estimatedHikingTimeSeconds = estTimeSeconds,
+            trailDifficulty = difficulty,
+            averageHikingSpeed = avgSpeed,
+            restStops = stops,
+            summitReached = isSummitReached
+        )
     }
 
     if (showDeleteConfirmation) {
@@ -7104,7 +7241,13 @@ fun ActivityDetailDialog(
                             modifier = Modifier
                                 .size(40.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(if (activity.sportType == "run") Color(0x20FF5E00) else Color(0x2000A2FF)),
+                                .background(
+                                    when (activity.sportType.lowercase()) {
+                                        "run" -> Color(0x20FF5E00)
+                                        "hike" -> HikeColor.copy(alpha = 0.2f)
+                                        else -> Color(0x2000A2FF)
+                                    }
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
@@ -7116,19 +7259,55 @@ fun ActivityDetailDialog(
                                     else -> Icons.Default.FitnessCenter
                                 },
                                 contentDescription = null,
-                                tint = if (activity.sportType == "run") OrangePrimary else Color(0xFF00A2FF),
+                                tint = when (activity.sportType.lowercase()) {
+                                    "run" -> OrangePrimary
+                                    "hike" -> HikeColor
+                                    else -> Color(0xFF00A2FF)
+                                },
                                 modifier = Modifier.size(22.dp)
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text(
-                                text = activity.sportType.uppercase(),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = OrangePrimary,
-                                letterSpacing = 1.sp
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = activity.sportType.uppercase(),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = when (activity.sportType.lowercase()) {
+                                        "run" -> OrangePrimary
+                                        "hike" -> HikeColor
+                                        else -> Color(0xFF00A2FF)
+                                    },
+                                    letterSpacing = 1.sp
+                                )
+                                if (isHike && hikingStats.summitReached) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(HikeColor.copy(alpha = 0.2f))
+                                            .border(1.dp, HikeColor, RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Terrain,
+                                                contentDescription = null,
+                                                tint = HikeColor,
+                                                modifier = Modifier.size(10.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "SUMMIT REACHED",
+                                                fontSize = 8.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = HikeColor
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             Text(
                                 text = SimpleDateFormat("EEEE, MMMM d, yyyy", Locale.US).format(Date(activity.timestamp)),
                                 fontSize = 13.sp,
@@ -7268,7 +7447,6 @@ fun ActivityDetailDialog(
                     }
 
                     // Detailed Statistics Grid
-                    Text("PERFORMANCE STATISTICS", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                     val avgPaceMinPerKm = if (activity.distanceKm > 0) (activity.durationSeconds / 60.0) / activity.distanceKm else 0.0
                     val avgPaceStr = if (useImperial) {
                         val paceMinPerMi = avgPaceMinPerKm / 0.621371
@@ -7327,8 +7505,37 @@ fun ActivityDetailDialog(
                         list
                     }
 
+                    val hikingCardList = remember(hikingStats, useImperial, elevUnit) {
+                        val list = mutableListOf<Pair<String, String>>()
+                        
+                        list.add(Pair("TRAIL DIFFICULTY", hikingStats.trailDifficulty))
+                        list.add(Pair("ESTIMATED HIKING TIME", formatHikingTime(hikingStats.estimatedHikingTimeSeconds)))
+                        list.add(Pair("AVERAGE HIKING SPEED", String.format(Locale.US, "%.1f %s", if (useImperial) hikingStats.averageHikingSpeed * 0.621371 else hikingStats.averageHikingSpeed, if (useImperial) "mph" else "km/h")))
+                        list.add(Pair("REST STOPS", "${hikingStats.restStops} ${if (hikingStats.restStops == 1) "stop" else "stops"}"))
+                        
+                        if (hikingStats.hasElevation) {
+                            val elevGainVal = if (useImperial) hikingStats.elevationGain * 3.28084 else hikingStats.elevationGain
+                            val elevLossVal = if (useImperial) hikingStats.elevationLoss * 3.28084 else hikingStats.elevationLoss
+                            val highestVal = if (useImperial) hikingStats.highestElevation * 3.28084 else hikingStats.highestElevation
+                            val lowestVal = if (useImperial) hikingStats.lowestElevation * 3.28084 else hikingStats.lowestElevation
+                            
+                            list.add(Pair("ELEVATION GAIN", String.format(Locale.US, "+%.0f %s", elevGainVal, elevUnit)))
+                            list.add(Pair("ELEVATION LOSS", String.format(Locale.US, "-%.0f %s", elevLossVal, elevUnit)))
+                            list.add(Pair("HIGHEST ELEVATION", String.format(Locale.US, "%.0f %s", highestVal, elevUnit)))
+                            list.add(Pair("LOWEST ELEVATION", String.format(Locale.US, "%.0f %s", lowestVal, elevUnit)))
+                            list.add(Pair("AVERAGE GRADE", String.format(Locale.US, "%.1f%%", hikingStats.averageGrade)))
+                            list.add(Pair("MAX GRADE", String.format(Locale.US, "%.1f%%", hikingStats.maxGrade)))
+                        }
+                        list
+                    }
+
+                    val displayCards = if (isHike) hikingCardList else statCards
+                    val displayTitle = if (isHike) "HIKING PERFORMANCE ANALYTICS" else "PERFORMANCE STATISTICS"
+
+                    Text(displayTitle, fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
+
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        for (i in statCards.indices step 2) {
+                        for (i in displayCards.indices step 2) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Card(
                                     colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
@@ -7336,20 +7543,50 @@ fun ActivityDetailDialog(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     Column(modifier = Modifier.padding(12.dp)) {
-                                        Text(statCards[i].first, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                        Text(statCards[i].second, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                        Text(displayCards[i].first, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                        if (displayCards[i].first == "TRAIL DIFFICULTY") {
+                                            val diffColor = when (displayCards[i].second) {
+                                                "Easy" -> Color(0xFF4CAF50)
+                                                "Moderate" -> Color(0xFFFFB300)
+                                                "Hard" -> Color(0xFFEF4444)
+                                                else -> Color(0xFF9C27B0)
+                                            }
+                                            Text(
+                                                text = displayCards[i].second,
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = diffColor
+                                            )
+                                        } else {
+                                            Text(displayCards[i].second, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                        }
                                     }
                                 }
                                 
-                                if (i + 1 < statCards.size) {
+                                if (i + 1 < displayCards.size) {
                                     Card(
                                         colors = CardDefaults.cardColors(containerColor = SlateCardSurfaceVariant),
                                         shape = RoundedCornerShape(12.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         Column(modifier = Modifier.padding(12.dp)) {
-                                            Text(statCards[i + 1].first, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
-                                            Text(statCards[i + 1].second, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                            Text(displayCards[i + 1].first, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextSecondary)
+                                            if (displayCards[i + 1].first == "TRAIL DIFFICULTY") {
+                                                val diffColor = when (displayCards[i + 1].second) {
+                                                    "Easy" -> Color(0xFF4CAF50)
+                                                    "Moderate" -> Color(0xFFFFB300)
+                                                    "Hard" -> Color(0xFFEF4444)
+                                                    else -> Color(0xFF9C27B0)
+                                                }
+                                                Text(
+                                                    text = displayCards[i + 1].second,
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    color = diffColor
+                                                )
+                                            } else {
+                                                Text(displayCards[i + 1].second, fontSize = 16.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
+                                            }
                                         }
                                     }
                                 } else {

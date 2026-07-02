@@ -91,6 +91,9 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     val feedPosts: StateFlow<List<FeedPost>> = repository.feedPosts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val routes: StateFlow<List<Route>> = repository.routes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Customizable Feed States
     private val _feedSportFilter = MutableStateFlow("all")
     val feedSportFilter: StateFlow<String> = _feedSportFilter.asStateFlow()
@@ -953,6 +956,48 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
             if (_selectedActivity.value?.id == activity.id) {
                 _selectedActivity.value = null
             }
+        }
+    }
+
+    // Route Explorer Actions
+    fun insertRoute(route: Route) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.insertRoute(route)
+        }
+    }
+
+    fun updateRoute(route: Route) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateRoute(route)
+        }
+    }
+
+    fun deleteRoute(route: Route) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.deleteRoute(route)
+        }
+    }
+
+    fun toggleRouteFavorite(route: Route) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateRoute(route.copy(isFavorite = !route.isFavorite))
+        }
+    }
+
+    fun renameRoute(route: Route, newName: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateRoute(route.copy(name = newName))
+        }
+    }
+
+    fun duplicateRoute(route: Route) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val duplicated = route.copy(
+                id = 0,
+                name = "${route.name} (Copy)",
+                dateCreated = System.currentTimeMillis()
+            )
+            repository.insertRoute(duplicated)
         }
     }
 }

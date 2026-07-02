@@ -102,6 +102,24 @@ interface FeedCommentDao {
     suspend fun deleteComment(comment: FeedComment)
 }
 
+@Dao
+interface RouteDao {
+    @Query("SELECT * FROM routes ORDER BY dateCreated DESC")
+    fun getAllRoutes(): Flow<List<Route>>
+
+    @Query("SELECT * FROM routes WHERE id = :id")
+    suspend fun getRouteById(id: Long): Route?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRoute(route: Route): Long
+
+    @Update
+    suspend fun updateRoute(route: Route)
+
+    @Delete
+    suspend fun deleteRoute(route: Route)
+}
+
 @Database(
     entities = [
         Gear::class,
@@ -110,9 +128,10 @@ interface FeedCommentDao {
         SegmentEffort::class,
         FeedPost::class,
         FeedComment::class,
-        User::class
+        User::class,
+        Route::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -123,6 +142,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun feedPostDao(): FeedPostDao
     abstract fun feedCommentDao(): FeedCommentDao
     abstract fun userDao(): UserDao
+    abstract fun routeDao(): RouteDao
 
     companion object {
         @Volatile
