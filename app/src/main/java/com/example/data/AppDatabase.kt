@@ -129,9 +129,10 @@ interface RouteDao {
         FeedPost::class,
         FeedComment::class,
         User::class,
-        Route::class
+        Route::class,
+        WeatherCache::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -143,6 +144,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun feedCommentDao(): FeedCommentDao
     abstract fun userDao(): UserDao
     abstract fun routeDao(): RouteDao
+    abstract fun weatherDao(): WeatherDao
 
     companion object {
         @Volatile

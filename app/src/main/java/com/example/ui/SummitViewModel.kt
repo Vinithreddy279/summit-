@@ -2,6 +2,8 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -253,6 +255,42 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             TrackingService.selectedSimulationRoute.collect {
                 _selectedSimulationRoute.value = it
+            }
+        }
+
+        // Weather Initialization
+        viewModelScope.launch {
+            repository.getWeatherCacheFlow().collect { cached ->
+                if (cached != null) {
+                    if (_weatherUiState.value !is WeatherUiState.Success) {
+                        _weatherUiState.value = WeatherUiState.Success(cached, isOffline = true)
+                    }
+                } else {
+                    if (_weatherUiState.value is WeatherUiState.Loading) {
+                        _weatherUiState.value = WeatherUiState.Unavailable
+                    }
+                }
+            }
+        }
+
+        // Periodic weather refresh check
+        viewModelScope.launch {
+            while (true) {
+                checkAndRefreshWeather()
+                delay(60000L) // check conditions every minute
+            }
+        }
+
+        // Trigger refresh if user moves 5km during recording
+        viewModelScope.launch {
+            TrackingService.trackpoints.collect { pts ->
+                val lastPt = pts.lastOrNull()
+                if (lastPt != null) {
+                    val dist = calculateDistanceKm(lastFetchLat, lastFetchLon, lastPt.lat, lastPt.lng)
+                    if (dist >= 5.0) {
+                        checkAndRefreshWeather()
+                    }
+                }
             }
         }
     }
@@ -998,6 +1036,243 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
                 dateCreated = System.currentTimeMillis()
             )
             repository.insertRoute(duplicated)
+        }
+    }
+
+    // --- Weather Integration States & Methods ---
+    sealed class WeatherUiState {
+        object Loading : WeatherUiState()
+        data class Success(val data: WeatherCache, val isOffline: Boolean) : WeatherUiState()
+        data class Error(val message: String, val cachedData: WeatherCache? = null) : WeatherUiState()
+        object Unavailable : WeatherUiState()
+    }
+
+    private val _weatherUiState = MutableStateFlow<WeatherUiState>(WeatherUiState.Loading)
+    val weatherUiState: StateFlow<WeatherUiState> = _weatherUiState.asStateFlow()
+
+    private var lastFetchTimeMs = 0L
+    private var lastFetchLat = 0.0
+    private var lastFetchLon = 0.0
+
+    fun checkAndRefreshWeather(force: Boolean = false) {
+        viewModelScope.launch {
+            val currentLoc = getCurrentGpsCoordinates()
+            if (currentLoc == null) {
+                val cached = repository.getWeatherCacheDirect()
+                if (cached != null) {
+                    _weatherUiState.value = WeatherUiState.Success(cached, isOffline = true)
+                } else {
+                    _weatherUiState.value = WeatherUiState.Error("Location unavailable. Enable location to view weather.")
+                }
+                return@launch
+            }
+            
+            val now = System.currentTimeMillis()
+            val timeElapsedMs = now - lastFetchTimeMs
+            val distanceMovedKm = if (lastFetchLat != 0.0 && lastFetchLon != 0.0) {
+                calculateDistanceKm(lastFetchLat, lastFetchLon, currentLoc.first, currentLoc.second)
+            } else {
+                Double.MAX_VALUE
+            }
+            
+            if (force || lastFetchTimeMs == 0L || timeElapsedMs >= 1800000L || distanceMovedKm >= 5.0) {
+                fetchWeatherFromApi(currentLoc.first, currentLoc.second)
+            }
+        }
+    }
+
+    fun fetchWeatherFromApi(lat: Double, lon: Double) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            if (!isInternetAvailable(context)) {
+                val cached = repository.getWeatherCacheDirect()
+                if (cached != null) {
+                    _weatherUiState.value = WeatherUiState.Success(cached, isOffline = true)
+                } else {
+                    _weatherUiState.value = WeatherUiState.Error("No internet connection and no cached weather.")
+                }
+                return@launch
+            }
+
+            try {
+                val response = WeatherClient.service.getForecast(lat, lon)
+                val current = response.current
+                if (current != null) {
+                    val temp = current.temperature2m
+                    val feelsLike = current.apparentTemperature
+                    val humidity = current.relativeHumidity2m.toInt()
+                    val weatherCode = current.weatherCode
+                    val windSpeed = current.windSpeed10m
+                    val windDirection = current.windDirection10m
+                    
+                    val sunriseIso = response.daily?.sunrise?.firstOrNull() ?: ""
+                    val sunsetIso = response.daily?.sunset?.firstOrNull() ?: ""
+                    val sunriseStr = formatIsoTimeToHm(sunriseIso)
+                    val sunsetStr = formatIsoTimeToHm(sunsetIso)
+                    
+                    val uvIndex = current.uvIndex ?: response.daily?.uvIndexMax?.firstOrNull() ?: 0.0
+                    
+                    val chanceOfRain = response.hourly?.precipitationProbability?.let { probs ->
+                        val times = response.hourly.time ?: return@let probs.firstOrNull() ?: 0
+                        val currentTimeStr = current.time
+                        if (currentTimeStr.isNotEmpty()) {
+                            val index = times.indexOfFirst { it.startsWith(currentTimeStr.substring(0, 13)) }
+                            if (index != -1 && index < probs.size) {
+                                probs[index]
+                            } else {
+                                probs.firstOrNull() ?: 0
+                            }
+                        } else {
+                            probs.firstOrNull() ?: 0
+                        }
+                    } ?: 0
+
+                    val conditionStr = mapWmoCodeToCondition(weatherCode)
+
+                    val weatherCache = WeatherCache(
+                        id = 0,
+                        temp = temp,
+                        feelsLike = feelsLike,
+                        condition = conditionStr,
+                        weatherCode = weatherCode,
+                        humidity = humidity,
+                        windSpeed = windSpeed,
+                        windDirection = windDirection,
+                        chanceOfRain = chanceOfRain,
+                        uvIndex = uvIndex,
+                        sunrise = sunriseStr,
+                        sunset = sunsetStr,
+                        lastUpdatedTimeMs = System.currentTimeMillis(),
+                        latitude = lat,
+                        longitude = lon
+                    )
+
+                    repository.insertWeatherCache(weatherCache)
+
+                    lastFetchTimeMs = System.currentTimeMillis()
+                    lastFetchLat = lat
+                    lastFetchLon = lon
+
+                    _weatherUiState.value = WeatherUiState.Success(weatherCache, isOffline = false)
+                } else {
+                    handleWeatherError("Invalid API response format", false)
+                }
+            } catch (e: retrofit2.HttpException) {
+                handleWeatherError("API error: ${e.code()}", false)
+            } catch (e: java.io.IOException) {
+                handleWeatherError("Network timeout or connection error", false)
+            } catch (e: Exception) {
+                handleWeatherError("Error: ${e.message ?: "Unknown error"}", false)
+            }
+        }
+    }
+
+    private suspend fun handleWeatherError(message: String, gpsUnavailable: Boolean) {
+        val cached = repository.getWeatherCacheDirect()
+        if (cached != null) {
+            _weatherUiState.value = WeatherUiState.Error(message, cached)
+        } else {
+            if (gpsUnavailable) {
+                _weatherUiState.value = WeatherUiState.Error("Location unavailable. Enable location to view weather.")
+            } else {
+                _weatherUiState.value = WeatherUiState.Error("Weather unavailable")
+            }
+        }
+    }
+
+    private suspend fun getCurrentGpsCoordinates(): Pair<Double, Double>? {
+        val livePoints = TrackingService.trackpoints.value
+        val lastLivePt = livePoints.lastOrNull()
+        if (lastLivePt != null) {
+            return Pair(lastLivePt.lat, lastLivePt.lng)
+        }
+        
+        val context = getApplication<Application>()
+        val hasFinePermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasCoarsePermission = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        
+        if (hasFinePermission || hasCoarsePermission) {
+            val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
+            return kotlin.coroutines.suspendCoroutine { continuation ->
+                try {
+                    fusedClient.lastLocation.addOnSuccessListener { loc ->
+                        if (loc != null) {
+                            continuation.resumeWith(Result.success(Pair(loc.latitude, loc.longitude)))
+                        } else {
+                            continuation.resumeWith(Result.success(null))
+                        }
+                    }.addOnFailureListener {
+                        continuation.resumeWith(Result.success(null))
+                    }
+                } catch (e: SecurityException) {
+                    continuation.resumeWith(Result.success(null))
+                }
+            }
+        } else {
+            return null
+        }
+    }
+
+    private fun isInternetAvailable(context: android.content.Context): Boolean {
+        val cm = context.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val activeNetwork = cm.activeNetwork ?: return false
+        val capabilities = cm.getNetworkCapabilities(activeNetwork) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+    }
+
+    private fun calculateDistanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6371.0
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return r * c
+    }
+
+    private fun formatIsoTimeToHm(isoStr: String?): String {
+        if (isoStr.isNullOrEmpty()) return "--:--"
+        val tIndex = isoStr.indexOf('T')
+        if (tIndex != -1 && tIndex + 6 <= isoStr.length) {
+            return isoStr.substring(tIndex + 1, tIndex + 6)
+        }
+        return isoStr
+    }
+
+    private fun mapWmoCodeToCondition(code: Int): String {
+        return when (code) {
+            0 -> "Clear Sky"
+            1 -> "Mainly Clear"
+            2 -> "Partly Cloudy"
+            3 -> "Overcast"
+            45 -> "Foggy"
+            48 -> "Depositing Rime Fog"
+            51 -> "Light Drizzle"
+            53 -> "Moderate Drizzle"
+            55 -> "Dense Drizzle"
+            56, 57 -> "Freezing Drizzle"
+            61 -> "Slight Rain"
+            63 -> "Moderate Rain"
+            65 -> "Heavy Rain"
+            66, 67 -> "Freezing Rain"
+            71 -> "Slight Snowfall"
+            73 -> "Moderate Snowfall"
+            75 -> "Heavy Snowfall"
+            77 -> "Snow Grains"
+            80 -> "Slight Rain Showers"
+            81 -> "Moderate Rain Showers"
+            82 -> "Violent Rain Showers"
+            85, 86 -> "Snow Showers"
+            95 -> "Thunderstorm"
+            96, 99 -> "Thunderstorm with Hail"
+            else -> "Unknown"
         }
     }
 }

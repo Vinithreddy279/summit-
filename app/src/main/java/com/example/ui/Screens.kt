@@ -1791,102 +1791,308 @@ fun AchievementBadge(
     }
 }
 
+private fun formatTimeMsToHm(timeMs: Long): String {
+    val date = java.util.Date(timeMs)
+    val sdf = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+    return sdf.format(date)
+}
+
 @Composable
-fun WeatherWidget(modifier: Modifier = Modifier) {
+fun WeatherWidget(viewModel: SummitViewModel, modifier: Modifier = Modifier) {
+    val state by viewModel.weatherUiState.collectAsStateWithLifecycle()
+
+    when (val uiState = state) {
+        is SummitViewModel.WeatherUiState.Loading -> {
+            GlassCard(modifier = modifier) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = OrangePrimary)
+                }
+            }
+        }
+        is SummitViewModel.WeatherUiState.Success -> {
+            val weather = uiState.data
+            WeatherCardContent(
+                weather = weather,
+                isOffline = uiState.isOffline,
+                onRefresh = { viewModel.checkAndRefreshWeather(force = true) },
+                modifier = modifier
+            )
+        }
+        is SummitViewModel.WeatherUiState.Error -> {
+            val weather = uiState.cachedData
+            if (weather != null) {
+                WeatherCardContent(
+                    weather = weather,
+                    isOffline = true,
+                    errorMessage = uiState.message,
+                    onRefresh = { viewModel.checkAndRefreshWeather(force = true) },
+                    modifier = modifier
+                )
+            } else {
+                GlassCard(modifier = modifier) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Cloud,
+                            contentDescription = "Weather unavailable",
+                            tint = SlateTextSecondary,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Text(
+                            text = if (uiState.message.contains("location", ignoreCase = true)) "Location unavailable" else "Weather unavailable",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = SlateTextPrimary
+                        )
+                        Text(
+                            text = uiState.message,
+                            fontSize = 12.sp,
+                            color = SlateTextSecondary,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Button(
+                            onClick = { viewModel.checkAndRefreshWeather(force = true) },
+                            colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                        ) {
+                            Text("Retry", color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+        is SummitViewModel.WeatherUiState.Unavailable -> {
+            GlassCard(modifier = modifier) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Cloud,
+                        contentDescription = "Weather unavailable",
+                        tint = SlateTextSecondary,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Weather unavailable",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = { viewModel.checkAndRefreshWeather(force = true) },
+                        colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                    ) {
+                        Text("Retry", color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WeatherCardContent(
+    weather: WeatherCache,
+    isOffline: Boolean,
+    onRefresh: () -> Unit,
+    modifier: Modifier = Modifier,
+    errorMessage: String? = null
+) {
+    val index = (((weather.windDirection % 360) + 360) % 360 / 45.0 + 0.5).toInt() % 8
+    val windDirStr = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW")[index]
+
     GlassCard(modifier = modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFFFC857))
+                            .background(if (isOffline) Color(0xFFFF9800) else Color(0xFFFFC857))
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "LIVE WEATHER REPORT",
+                        text = if (isOffline) "OFFLINE • CACHED" else "LIVE WEATHER REPORT",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
-                        color = Color(0xFFFFC857),
+                        color = if (isOffline) Color(0xFFFF9800) else Color(0xFFFFC857),
                         letterSpacing = 1.sp
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
+
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SettingsBackupRestore,
+                        contentDescription = "Refresh weather",
+                        tint = SlateTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Main Info Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Current Coordinates",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Black,
+                        color = SlateTextPrimary
+                    )
+                    Text(
+                        text = "${String.format(java.util.Locale.US, "%.4f", weather.latitude)}, ${String.format(java.util.Locale.US, "%.4f", weather.longitude)}",
+                        fontSize = 11.sp,
+                        color = SlateTextSecondary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${weather.condition} • Peak Conditions",
+                        fontSize = 12.sp,
+                        color = OrangePrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (weather.weatherCode == 0) Icons.Default.WbSunny else Icons.Default.Cloud,
+                            contentDescription = weather.condition,
+                            tint = Color(0xFFFFC857),
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Text(
+                            text = "${weather.temp.toInt()}°C",
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Black,
+                            color = SlateTextPrimary
+                        )
+                    }
+                    Text(
+                        text = "Feels like ${weather.feelsLike.toInt()}°C",
+                        fontSize = 11.sp,
+                        color = SlateTextSecondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            if (errorMessage != null) {
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Chamonix Valley Peak",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Black,
-                    color = SlateTextPrimary
-                )
-                Text(
-                    text = "Clear sky • Perfect trail traction",
-                    fontSize = 12.sp,
-                    color = SlateTextSecondary,
+                    text = "Update failed: $errorMessage",
+                    fontSize = 11.sp,
+                    color = Color(0xFFEF5350),
                     fontWeight = FontWeight.Medium
                 )
             }
 
-            Column(horizontalAlignment = Alignment.End) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.WbSunny,
-                        contentDescription = "Sunny Weather",
-                        tint = Color(0xFFFFC857),
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Text(
-                        text = "21°C",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Black,
-                        color = SlateTextPrimary
-                    )
-                }
-                Text(
-                    text = "Feels like 20°C",
-                    fontSize = 11.sp,
-                    color = SlateTextSecondary,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
+            Spacer(modifier = Modifier.height(12.dp))
+            Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
-        Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
-        Spacer(modifier = Modifier.height(16.dp))
+            // 3-Column details grid (Primary stats)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.Speed, contentDescription = "Wind", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                    Column {
+                        Text("Wind", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        Text("${weather.windSpeed.toInt()} km/h $windDirStr", fontSize = 11.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.Cloud, contentDescription = "Humidity", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                    Column {
+                        Text("Humidity", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        Text("${weather.humidity}%", fontSize = 11.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.Thermostat, contentDescription = "UV index", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                    Column {
+                        Text("UV Index", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        Text(String.format(java.util.Locale.US, "%.1f", weather.uvIndex), fontSize = 11.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.Speed, contentDescription = "Wind", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
-                Column {
-                    Text("Wind", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                    Text("12 km/h", fontSize = 12.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+            Spacer(modifier = Modifier.height(12.dp))
+            Divider(color = SlateCardSurfaceVariant, thickness = 1.dp)
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 3-Column details grid (Secondary stats)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.WbSunny, contentDescription = "Sunrise", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                    Column {
+                        Text("Sunrise", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        Text(weather.sunrise, fontSize = 11.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.WbSunny, contentDescription = "Sunset", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                    Column {
+                        Text("Sunset", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        Text(weather.sunset, fontSize = 11.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.Cloud, contentDescription = "Rain chance", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
+                    Column {
+                        Text("Rain %", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        Text("${weather.chanceOfRain}%", fontSize = 11.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
+                    }
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.Cloud, contentDescription = "Humidity", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
-                Column {
-                    Text("Humidity", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                    Text("45%", fontSize = 12.sp, color = SlateTextPrimary, fontWeight = FontWeight.Black)
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(Icons.Default.Thermostat, contentDescription = "UV index", tint = SlateTextSecondary, modifier = Modifier.size(16.dp))
-                Column {
-                    Text("UV Index", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                    Text("Very High", fontSize = 12.sp, color = Color(0xFFFFC857), fontWeight = FontWeight.Black)
-                }
-            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Last sync: ${formatTimeMsToHm(weather.lastUpdatedTimeMs)}",
+                fontSize = 9.sp,
+                color = SlateTextSecondary,
+                modifier = Modifier.align(Alignment.End),
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
@@ -2709,7 +2915,7 @@ fun DashboardScreen(viewModel: SummitViewModel) {
         }
 
         item {
-            WeatherWidget(modifier = Modifier.fillMaxWidth())
+            WeatherWidget(viewModel = viewModel, modifier = Modifier.fillMaxWidth())
             Spacer(modifier = Modifier.height(16.dp))
         }
 

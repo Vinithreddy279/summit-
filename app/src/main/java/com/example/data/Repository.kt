@@ -12,12 +12,18 @@ class SummitRepository(private val db: AppDatabase) {
     private val feedCommentDao = db.feedCommentDao()
     private val userDao = db.userDao()
     private val routeDao = db.routeDao()
+    private val weatherDao = db.weatherDao()
 
     val gears: Flow<List<Gear>> = gearDao.getAllGears()
     val activities: Flow<List<Activity>> = activityDao.getAllActivities()
     val segments: Flow<List<Segment>> = segmentDao.getAllSegments()
     val feedPosts: Flow<List<FeedPost>> = feedPostDao.getAllPosts()
     val routes: Flow<List<Route>> = routeDao.getAllRoutes()
+
+    fun getWeatherCacheFlow(): Flow<WeatherCache?> = weatherDao.getWeatherFlow()
+    suspend fun getWeatherCacheDirect(): WeatherCache? = weatherDao.getWeatherDirect()
+    suspend fun insertWeatherCache(weather: WeatherCache) = weatherDao.insertWeather(weather)
+    suspend fun clearWeatherCache() = weatherDao.clearWeather()
 
     fun getComments(postId: Long): Flow<List<FeedComment>> = feedCommentDao.getCommentsForPost(postId)
     fun getEffortsForActivity(activityId: Long): Flow<List<SegmentEffort>> = segmentEffortDao.getEffortsForActivity(activityId)
