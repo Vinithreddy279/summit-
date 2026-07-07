@@ -4706,7 +4706,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
                     Text("Finish Workout", fontSize = 20.sp, fontWeight = FontWeight.Black, color = SlateTextPrimary)
-                    Text("Add a custom description to post onto your social feed!", fontSize = 12.sp, color = SlateTextSecondary)
+                    Text("Add notes about your adventure.", fontSize = 12.sp, color = SlateTextSecondary)
                     Spacer(modifier = Modifier.height(16.dp))
 
                     OutlinedTextField(
@@ -4740,6 +4740,10 @@ fun RecordScreen(viewModel: SummitViewModel) {
                         )
                         options.forEach { (value, label, desc) ->
                             val isSelected = selectedPrivacy == value
+                            val tagKey = when (value) {
+                                "Friends Only" -> "Friends"
+                                else -> value
+                            }
                             Card(
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (isSelected) OrangePrimary.copy(alpha = 0.15f) else SlateCardSurfaceVariant.copy(alpha = 0.5f)
@@ -4751,8 +4755,9 @@ fun RecordScreen(viewModel: SummitViewModel) {
                                 ),
                                 modifier = Modifier
                                     .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
                                     .clickable { selectedPrivacy = value }
-                                    .testTag("privacy_option_$value")
+                                    .testTag("privacy_option_$tagKey")
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -4790,25 +4795,41 @@ fun RecordScreen(viewModel: SummitViewModel) {
                                 viewModel.discardRecording()
                                 showFinishDialog = false
                             },
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.Red),
+                            modifier = Modifier.testTag("discard_recording_button")
                         ) {
-                            Text("Discard Session")
+                            Text("Discard Session", color = Color.Red, maxLines = 1)
                         }
 
-                        Row {
-                            TextButton(onClick = { showFinishDialog = false }) {
-                                Text("Cancel", color = SlateTextSecondary)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = { showFinishDialog = false },
+                                modifier = Modifier.testTag("cancel_recording_button")
+                            ) {
+                                Text("Cancel", color = SlateTextSecondary, maxLines = 1)
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
                             Button(
                                 onClick = {
                                     viewModel.finishRecording(activityNotes, selectedPrivacy)
                                     activityNotes = ""
                                     showFinishDialog = false
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary)
+                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                                modifier = Modifier
+                                    .height(44.dp)
+                                    .testTag("save_activity_button")
+                                    .widthIn(min = 130.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
                             ) {
-                                Text("Save & Share", color = Color.White)
+                                Text(
+                                    text = "Save Activity",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
@@ -6525,36 +6546,6 @@ fun OSMMapView(
                     }
                     overlays.add(compassOverlay)
 
-                    val p = Polyline(this).apply {
-                        color = android.graphics.Color.parseColor("#FF5722") // Summit Orange Primary
-                        width = 8f
-                    }
-
-                    val sM = Marker(this).apply {
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        title = "Start Location"
-
-                        val size = 48
-                        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                        val canvas = android.graphics.Canvas(bitmap)
-                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                        paint.color = 0xFF4CAF50.toInt() // Green
-                        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
-                        paint.color = 0x404CAF50.toInt() // Green Aura
-                        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
-                        icon = BitmapDrawable(ctx.resources, bitmap)
-                    }
-
-                    val eM = Marker(this).apply {
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    }
-
-                    overlays.add(p)
-                    overlays.add(sM)
-                    overlays.add(eM)
-
-                    overlaysState.value = MapOverlays(p, sM, eM)
-
                     setOnTouchListener { v, event ->
                         if (event.action == android.view.MotionEvent.ACTION_MOVE) {
                             autoFollow = false
@@ -6578,6 +6569,43 @@ fun OSMMapView(
                     }
 
                     try {
+                        val repo = try { mapView.repository } catch (e: Throwable) { null }
+                        if (repo == null) {
+                            return@post
+                        }
+
+                        if (overlaysState.value == null) {
+                            val p = Polyline(mapView).apply {
+                                color = android.graphics.Color.parseColor("#FF5722") // Summit Orange Primary
+                                width = 8f
+                            }
+
+                            val sM = Marker(mapView).apply {
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                title = "Start Location"
+
+                                val size = 48
+                                val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(bitmap)
+                                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                                paint.color = 0xFF4CAF50.toInt() // Green
+                                canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+                                paint.color = 0x404CAF50.toInt() // Green Aura
+                                canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+                                icon = BitmapDrawable(context.resources, bitmap)
+                            }
+
+                            val eM = Marker(mapView).apply {
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                            }
+
+                            mapView.overlays.add(p)
+                            mapView.overlays.add(sM)
+                            mapView.overlays.add(eM)
+
+                            overlaysState.value = MapOverlays(p, sM, eM)
+                        }
+
                         val overlays = overlaysState.value ?: return@post
                         val safePoints = points.toList()
 
@@ -7235,29 +7263,6 @@ fun PremiumOSMMapView(
                     }
                     overlays.add(compassOverlay)
 
-                    val p = Polyline(this).apply {
-                        color = android.graphics.Color.parseColor("#FF6A00")
-                        width = 8f
-                    }
-
-                    val sM = Marker(this).apply {
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        title = "Start Location"
-                        icon = premiumStartIcon
-                    }
-
-                    val eM = Marker(this).apply {
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        title = "Finish Location"
-                        icon = premiumFinishIcon
-                    }
-
-                    overlays.add(p)
-                    overlays.add(sM)
-                    overlays.add(eM)
-
-                    overlaysState.value = MapOverlays(p, sM, eM)
-
                     currentMapView.value = this
                 }
             },
@@ -7273,6 +7278,36 @@ fun PremiumOSMMapView(
                     }
                     
                     try {
+                        val repo = try { mapView.repository } catch (e: Throwable) { null }
+                        if (repo == null) {
+                            return@post
+                        }
+
+                        if (overlaysState.value == null) {
+                            val p = Polyline(mapView).apply {
+                                color = android.graphics.Color.parseColor("#FF6A00")
+                                width = 8f
+                            }
+
+                            val sM = Marker(mapView).apply {
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                title = "Start Location"
+                                icon = premiumStartIcon
+                            }
+
+                            val eM = Marker(mapView).apply {
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                title = "Finish Location"
+                                icon = premiumFinishIcon
+                            }
+
+                            mapView.overlays.add(p)
+                            mapView.overlays.add(sM)
+                            mapView.overlays.add(eM)
+
+                            overlaysState.value = MapOverlays(p, sM, eM)
+                        }
+
                         val overlays = overlaysState.value ?: return@post
                         val safePoints = points.toList()
 
