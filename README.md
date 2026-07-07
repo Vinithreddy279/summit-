@@ -64,23 +64,16 @@ The app is built using modern Android development practices including Jetpack Co
   <img src="images/map.png" width="220" alt="Live GPS Tracking"/>
 </p>
 
-User Interface
-      │
-      ▼
-Jetpack Compose
-      │
-      ▼
-ViewModel
-      │
-      ▼
-Repository
-      │
- ┌──────────────┐
- │ Room DB      │
- │ GPS Service  │
- │ Weather API  │
- │ OpenStreetMap│
- └──────────────┘
+## 🌟 Highlights
+
+- 🛰️ Real-time GPS tracking with intelligent filtering
+- 🗺️ Offline OpenStreetMap integration
+- 🥾 Hiking, Running, and Walking activity modes
+- 🌦️ Built-in weather dashboard with offline cache
+- 📊 Activity history with performance analytics
+- 📂 GPX import and export support
+- 💾 Room Database for offline storage
+- 🎨 Modern Material 3 user interface
 
 
  ## 🛠 Tech Stack
