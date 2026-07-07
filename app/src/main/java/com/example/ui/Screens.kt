@@ -6412,6 +6412,12 @@ fun AnimatedCardContainer(
     }
 }
 
+private class MapOverlays(
+    val polyline: Polyline,
+    val startMarker: Marker,
+    val endMarker: Marker
+)
+
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun OSMMapView(
@@ -6422,32 +6428,83 @@ fun OSMMapView(
 ) {
     val context = LocalContext.current
     var autoFollow by remember { mutableStateOf(true) }
-    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    val currentMapView = remember { mutableStateOf<MapView?>(null) }
+    val overlaysState = remember { mutableStateOf<MapOverlays?>(null) }
 
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle, mapViewRef) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
-                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> mapViewRef?.onPause()
-                androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> mapViewRef?.onDetach()
-                else -> {}
+            val mapView = currentMapView.value ?: return@LifecycleEventObserver
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                        try {
+                            mapView.onResume()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                        try {
+                            mapView.onPause()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
+                        try {
+                            mapView.onDetach()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    else -> {}
+                }
             }
         }
-        lifecycle.addObserver(observer)
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            lifecycle.removeObserver(observer)
-            mapViewRef?.onDetach()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                currentMapView.value?.onDetach()
+            }
+            currentMapView.value = null
         }
     }
 
-    // Initialize osmdroid configuration
-    LaunchedEffect(Unit) {
+    // Ensure osmdroid configuration is initialized before MapView is created
+    remember {
         org.osmdroid.config.Configuration.getInstance().load(
             context,
             android.preference.PreferenceManager.getDefaultSharedPreferences(context)
         )
         org.osmdroid.config.Configuration.getInstance().userAgentValue = context.packageName
+        true
+    }
+
+    val liveTrackingIcon = remember(context) {
+        val size = 48
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = 0xFF007AFF.toInt() // modern blue
+        canvas.drawCircle(size / 2f, size / 2f, 10f, paint)
+        paint.color = 0x40007AFF.toInt() // Aura
+        canvas.drawCircle(size / 2f, size / 2f, 20f, paint)
+        BitmapDrawable(context.resources, bitmap)
+    }
+
+    val finishLocationIcon = remember(context) {
+        val size = 48
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = 0xFFE91E63.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+        paint.color = 0x40E91E63.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+        BitmapDrawable(context.resources, bitmap)
     }
 
     Box(modifier = modifier) {
@@ -6460,17 +6517,44 @@ fun OSMMapView(
                     isTilesScaledToDpi = true
                     zoomController.setVisibility(org.osmdroid.views.CustomZoomButtonsController.Visibility.NEVER)
 
-                    // Add rotation gesture overlay
                     val rotationGestureOverlay = RotationGestureOverlay(this).apply { isEnabled = true }
                     overlays.add(rotationGestureOverlay)
 
-                    // Add compass overlay
                     val compassOverlay = CompassOverlay(ctx, InternalCompassOrientationProvider(ctx), this).apply {
                         enableCompass()
                     }
                     overlays.add(compassOverlay)
 
-                    // Turn off auto-follow when user manually drags/scrolls the map
+                    val p = Polyline(this).apply {
+                        color = android.graphics.Color.parseColor("#FF5722") // Summit Orange Primary
+                        width = 8f
+                    }
+
+                    val sM = Marker(this).apply {
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Start Location"
+
+                        val size = 48
+                        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bitmap)
+                        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                        paint.color = 0xFF4CAF50.toInt() // Green
+                        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+                        paint.color = 0x404CAF50.toInt() // Green Aura
+                        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+                        icon = BitmapDrawable(ctx.resources, bitmap)
+                    }
+
+                    val eM = Marker(this).apply {
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    }
+
+                    overlays.add(p)
+                    overlays.add(sM)
+                    overlays.add(eM)
+
+                    overlaysState.value = MapOverlays(p, sM, eM)
+
                     setOnTouchListener { v, event ->
                         if (event.action == android.view.MotionEvent.ACTION_MOVE) {
                             autoFollow = false
@@ -6478,91 +6562,47 @@ fun OSMMapView(
                         v.performClick()
                         false
                     }
-                    
-                    mapViewRef = this
+
+                    currentMapView.value = this
                 }
             },
             update = { mapView ->
-                mapViewRef = mapView
-                
-                // Wrap in mapView.post to ensure layout has run, and prevent map rendering/updates until fully initialized
+                currentMapView.value = mapView
+
                 mapView.post {
-                    // Safety check: skip rendering if the map has no layout/size, or if controller is unavailable
+                    if (!mapView.isAttachedToWindow) {
+                        return@post
+                    }
                     if (mapView.width == 0 || mapView.height == 0 || mapView.controller == null) {
                         return@post
                     }
-                    
+
                     try {
-                        // Clear existing dynamically added overlays (keeping rotation/compass overlays)
-                        val nonSystemOverlays = mapView.overlays.filter { 
-                            it !is RotationGestureOverlay && it !is CompassOverlay 
-                        }
-                        mapView.overlays.removeAll(nonSystemOverlays)
+                        val overlays = overlaysState.value ?: return@post
+                        val safePoints = points.toList()
 
-                        // Avoid accessing elements in list if empty
-                        val safePoints = points.toList() // Snapshot for thread safety
                         if (safePoints.isNotEmpty()) {
-                            // Draw Polyline (Summit Orange Route)
-                            val polyline = Polyline(mapView).apply {
-                                color = android.graphics.Color.parseColor("#FF5722") // Summit Orange Primary
-                                width = 8f
-                                setPoints(safePoints.map { GeoPoint(it.lat, it.lng) })
-                            }
-                            mapView.overlays.add(polyline)
+                            overlays.polyline.setEnabled(true)
+                            overlays.polyline.setPoints(safePoints.map { GeoPoint(it.lat, it.lng) })
 
-                            // Start Marker (Green Dot with translucent aura)
                             val startPt = safePoints.firstOrNull()
                             if (startPt != null) {
-                                val startMarker = Marker(mapView).apply {
-                                    position = GeoPoint(startPt.lat, startPt.lng)
-                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                    title = "Start Location"
-                                    
-                                    val size = 48
-                                    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                                    val canvas = android.graphics.Canvas(bitmap)
-                                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                                    paint.color = 0xFF4CAF50.toInt() // Green
-                                    canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
-                                    paint.color = 0x404CAF50.toInt() // Green Aura
-                                    canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
-                                    icon = BitmapDrawable(context.resources, bitmap)
-                                }
-                                mapView.overlays.add(startMarker)
+                                overlays.startMarker.setEnabled(true)
+                                overlays.startMarker.setPosition(GeoPoint(startPt.lat, startPt.lng))
+                            } else {
+                                overlays.startMarker.setEnabled(false)
                             }
 
-                            // Current / End Marker
                             val lastPt = safePoints.lastOrNull()
                             if (lastPt != null) {
-                                val lastMarker = Marker(mapView).apply {
-                                    position = GeoPoint(lastPt.lat, lastPt.lng)
-                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                    title = if (isLiveTracking) "Current Position" else "Finish Location"
-                                    
-                                    val size = 48
-                                    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                                    val canvas = android.graphics.Canvas(bitmap)
-                                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                                    
-                                    if (isLiveTracking) {
-                                        // Blue current location marker with translucent aura
-                                        paint.color = 0xFF007AFF.toInt() // modern blue
-                                        canvas.drawCircle(size / 2f, size / 2f, 10f, paint)
-                                        paint.color = 0x40007AFF.toInt() // Aura
-                                        canvas.drawCircle(size / 2f, size / 2f, 20f, paint)
-                                    } else {
-                                        // Red marker
-                                        paint.color = 0xFFE91E63.toInt()
-                                        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
-                                        paint.color = 0x40E91E63.toInt()
-                                        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
-                                    }
-                                    icon = BitmapDrawable(context.resources, bitmap)
-                                }
-                                mapView.overlays.add(lastMarker)
+                                overlays.endMarker.setEnabled(true)
+                                overlays.endMarker.setPosition(GeoPoint(lastPt.lat, lastPt.lng))
+                                overlays.endMarker.title = if (isLiveTracking) "Current Position" else "Finish Location"
+                                overlays.endMarker.icon = if (isLiveTracking) liveTrackingIcon else finishLocationIcon
+                            } else {
+                                overlays.endMarker.setEnabled(false)
                             }
 
-                            // Trigger Camera Animations / Fitting
                             if (isLiveTracking) {
                                 if (autoFollow && lastPt != null) {
                                     val gp = GeoPoint(lastPt.lat, lastPt.lng)
@@ -6572,14 +6612,13 @@ fun OSMMapView(
                                     }
                                 }
                             } else {
-                                // Zoom to fit the route bounds
                                 val lats = safePoints.map { it.lat }
                                 val lngs = safePoints.map { it.lng }
                                 val minLat = lats.minOrNull() ?: 0.0
                                 val maxLat = lats.maxOrNull() ?: 0.0
                                 val minLng = lngs.minOrNull() ?: 0.0
                                 val maxLng = lngs.maxOrNull() ?: 0.0
-                                
+
                                 val boundingBox = org.osmdroid.util.BoundingBox(maxLat, maxLng, minLat, minLng)
                                 try {
                                     mapView.zoomToBoundingBox(boundingBox, true, 40)
@@ -6590,7 +6629,10 @@ fun OSMMapView(
                                 }
                             }
                         } else {
-                            // Fallback/Default Center when no points yet (e.g. San Francisco)
+                            overlays.polyline.setEnabled(false)
+                            overlays.startMarker.setEnabled(false)
+                            overlays.endMarker.setEnabled(false)
+
                             val sfCenter = GeoPoint(37.7749, -122.4194)
                             mapView.controller?.setCenter(sfCenter)
                             mapView.controller?.setZoom(13.0)
@@ -6603,7 +6645,6 @@ fun OSMMapView(
             }
         )
 
-        // Custom Overlay Controls: Zoom In, Zoom Out, Re-center
         Column(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -6615,7 +6656,7 @@ fun OSMMapView(
         ) {
             IconButton(
                 onClick = { 
-                    mapViewRef?.let {
+                    currentMapView.value?.let {
                         val currentZoom = it.zoomLevelDouble
                         it.controller.setZoom(currentZoom + 1.0)
                     }
@@ -6626,7 +6667,7 @@ fun OSMMapView(
             }
             IconButton(
                 onClick = { 
-                    mapViewRef?.let {
+                    currentMapView.value?.let {
                         val currentZoom = it.zoomLevelDouble
                         it.controller.setZoom(currentZoom - 1.0)
                     }
@@ -6640,10 +6681,10 @@ fun OSMMapView(
                     autoFollow = true
                     if (points.isNotEmpty()) {
                         val lastPt = points.last()
-                        mapViewRef?.controller?.animateTo(GeoPoint(lastPt.lat, lastPt.lng))
-                        mapViewRef?.controller?.setZoom(17.5)
+                        currentMapView.value?.controller?.animateTo(GeoPoint(lastPt.lat, lastPt.lng))
+                        currentMapView.value?.controller?.setZoom(17.5)
                     } else {
-                        mapViewRef?.controller?.animateTo(GeoPoint(37.7749, -122.4194))
+                        currentMapView.value?.controller?.animateTo(GeoPoint(37.7749, -122.4194))
                     }
                 },
                 modifier = Modifier.size(36.dp)
@@ -6656,7 +6697,6 @@ fun OSMMapView(
             }
         }
 
-        // Floating info badge
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -7099,31 +7139,82 @@ fun PremiumOSMMapView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
+    val currentMapView = remember { mutableStateOf<MapView?>(null) }
+    val overlaysState = remember { mutableStateOf<MapOverlays?>(null) }
 
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle, mapViewRef) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            when (event) {
-                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> mapViewRef?.onResume()
-                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> mapViewRef?.onPause()
-                androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> mapViewRef?.onDetach()
-                else -> {}
+            val mapView = currentMapView.value ?: return@LifecycleEventObserver
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                when (event) {
+                    androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                        try {
+                            mapView.onResume()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> {
+                        try {
+                            mapView.onPause()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    androidx.lifecycle.Lifecycle.Event.ON_DESTROY -> {
+                        try {
+                            mapView.onDetach()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    else -> {}
+                }
             }
         }
-        lifecycle.addObserver(observer)
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            lifecycle.removeObserver(observer)
-            mapViewRef?.onDetach()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+                currentMapView.value?.onDetach()
+            }
+            currentMapView.value = null
         }
     }
 
-    LaunchedEffect(Unit) {
+    remember {
         Configuration.getInstance().load(
             context,
             PreferenceManager.getDefaultSharedPreferences(context)
         )
         Configuration.getInstance().userAgentValue = context.packageName
+        true
+    }
+
+    val premiumStartIcon = remember(context) {
+        val size = 48
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = 0xFF4CAF50.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+        paint.color = 0x404CAF50.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+        BitmapDrawable(context.resources, bitmap)
+    }
+
+    val premiumFinishIcon = remember(context) {
+        val size = 48
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.color = 0xFFE91E63.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
+        paint.color = 0x40E91E63.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+        BitmapDrawable(context.resources, bitmap)
     }
 
     Box(modifier = modifier) {
@@ -7144,70 +7235,65 @@ fun PremiumOSMMapView(
                     }
                     overlays.add(compassOverlay)
 
-                    mapViewRef = this
+                    val p = Polyline(this).apply {
+                        color = android.graphics.Color.parseColor("#FF6A00")
+                        width = 8f
+                    }
+
+                    val sM = Marker(this).apply {
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Start Location"
+                        icon = premiumStartIcon
+                    }
+
+                    val eM = Marker(this).apply {
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        title = "Finish Location"
+                        icon = premiumFinishIcon
+                    }
+
+                    overlays.add(p)
+                    overlays.add(sM)
+                    overlays.add(eM)
+
+                    overlaysState.value = MapOverlays(p, sM, eM)
+
+                    currentMapView.value = this
                 }
             },
             update = { mapView ->
-                mapViewRef = mapView
+                currentMapView.value = mapView
                 
-                // Wrap in mapView.post to ensure layout has run, and prevent map rendering/updates until fully initialized
                 mapView.post {
-                    // Safety check: skip rendering if the map has no layout/size, or if controller is unavailable
+                    if (!mapView.isAttachedToWindow) {
+                        return@post
+                    }
                     if (mapView.width == 0 || mapView.height == 0 || mapView.controller == null) {
                         return@post
                     }
                     
                     try {
-                        val nonSystemOverlays = mapView.overlays.filter { 
-                            it !is RotationGestureOverlay && it !is CompassOverlay 
-                        }
-                        mapView.overlays.removeAll(nonSystemOverlays)
+                        val overlays = overlaysState.value ?: return@post
+                        val safePoints = points.toList()
 
-                        val safePoints = points.toList() // Snapshot for thread safety
                         if (safePoints.isNotEmpty()) {
-                            val polyline = Polyline(mapView).apply {
-                                color = android.graphics.Color.parseColor("#FF6A00")
-                                width = 8f
-                                setPoints(safePoints.map { GeoPoint(it.lat, it.lng) })
-                            }
-                            mapView.overlays.add(polyline)
+                            overlays.polyline.setEnabled(true)
+                            overlays.polyline.setPoints(safePoints.map { GeoPoint(it.lat, it.lng) })
 
                             val startPt = safePoints.firstOrNull()
                             if (startPt != null) {
-                                val startMarker = Marker(mapView).apply {
-                                    position = GeoPoint(startPt.lat, startPt.lng)
-                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                    title = "Start Location"
-                                    val size = 48
-                                    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                                    val canvas = android.graphics.Canvas(bitmap)
-                                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                                    paint.color = 0xFF4CAF50.toInt()
-                                    canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
-                                    paint.color = 0x404CAF50.toInt()
-                                    canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
-                                    icon = BitmapDrawable(context.resources, bitmap)
-                                }
-                                mapView.overlays.add(startMarker)
+                                overlays.startMarker.setEnabled(true)
+                                overlays.startMarker.setPosition(GeoPoint(startPt.lat, startPt.lng))
+                            } else {
+                                overlays.startMarker.setEnabled(false)
                             }
 
                             val lastPt = safePoints.lastOrNull()
                             if (lastPt != null) {
-                                val lastMarker = Marker(mapView).apply {
-                                    position = GeoPoint(lastPt.lat, lastPt.lng)
-                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                    title = "Finish Location"
-                                    val size = 48
-                                    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-                                    val canvas = android.graphics.Canvas(bitmap)
-                                    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                                    paint.color = 0xFFE91E63.toInt()
-                                    canvas.drawCircle(size / 2f, size / 2f, 8f, paint)
-                                    paint.color = 0x40E91E63.toInt()
-                                    canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
-                                    icon = BitmapDrawable(context.resources, bitmap)
-                                }
-                                mapView.overlays.add(lastMarker)
+                                overlays.endMarker.setEnabled(true)
+                                overlays.endMarker.setPosition(GeoPoint(lastPt.lat, lastPt.lng))
+                            } else {
+                                overlays.endMarker.setEnabled(false)
                             }
 
                             val lats = safePoints.map { it.lat }
@@ -7224,6 +7310,10 @@ fun PremiumOSMMapView(
                                 mapView.controller?.setCenter(center)
                                 mapView.controller?.setZoom(14.0)
                             }
+                        } else {
+                            overlays.polyline.setEnabled(false)
+                            overlays.startMarker.setEnabled(false)
+                            overlays.endMarker.setEnabled(false)
                         }
                         mapView.invalidate()
                     } catch (e: Exception) {
@@ -7241,7 +7331,7 @@ fun PremiumOSMMapView(
         ) {
             FloatingActionButton(
                 onClick = {
-                    val mapView = mapViewRef ?: return@FloatingActionButton
+                    val mapView = currentMapView.value ?: return@FloatingActionButton
                     if (points.isNotEmpty()) {
                         val lats = points.map { it.lat }
                         val lngs = points.map { it.lng }
@@ -7273,7 +7363,7 @@ fun PremiumOSMMapView(
 
             FloatingActionButton(
                 onClick = {
-                    mapViewRef?.controller?.zoomIn()
+                    currentMapView.value?.controller?.zoomIn()
                 },
                 containerColor = SlateCardSurface,
                 contentColor = SlateTextPrimary,
@@ -7289,7 +7379,7 @@ fun PremiumOSMMapView(
 
             FloatingActionButton(
                 onClick = {
-                    mapViewRef?.controller?.zoomOut()
+                    currentMapView.value?.controller?.zoomOut()
                 },
                 containerColor = SlateCardSurface,
                 contentColor = SlateTextPrimary,
