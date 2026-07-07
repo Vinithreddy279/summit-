@@ -35,22 +35,18 @@ It enables users to track hiking, running, and walking activities with real-time
 The app is built using modern Android development practices including Jetpack Compose, MVVM architecture, and Room Database.
 
 
-## ✨ Features
+ 🌟 Highlights
 
-- 🛰️ Real-time GPS Tracking
-- 🗺️ Offline OpenStreetMap
-- 🥾 Hiking Mode
-- 🏃 Running Mode
-- 🚶 Walking Mode
-- ⏸️ Auto Pause & Resume
-- 📈 Activity Analytics
-- ⛰️ Elevation Tracking
-- 🔥 Calorie Estimation
-- 🌦️ Weather Integration
-- 📂 GPX Import
-- 📤 GPX Export
-- 💾 Room Database
-- 🌙 Material 3 UI
+- 🛰️ Real-time GPS tracking with intelligent filtering
+- 🗺️ Offline OpenStreetMap integration
+- 🥾 Hiking, Running, and Walking activity modes
+- 🌦️ Built-in weather dashboard with offline cache
+- 📊 Activity history with performance analytics
+- 📂 GPX import and export support
+- 💾 Room Database for offline storage
+- 🎨 Modern Material 3 user interface
+
+
 
 ## 📱 Screenshots
 
@@ -64,18 +60,7 @@ The app is built using modern Android development practices including Jetpack Co
   <img src="images/map.png" width="220" alt="Live GPS Tracking"/>
 </p>
 
-## 🌟 Highlights
-
-- 🛰️ Real-time GPS tracking with intelligent filtering
-- 🗺️ Offline OpenStreetMap integration
-- 🥾 Hiking, Running, and Walking activity modes
-- 🌦️ Built-in weather dashboard with offline cache
-- 📊 Activity history with performance analytics
-- 📂 GPX import and export support
-- 💾 Room Database for offline storage
-- 🎨 Modern Material 3 user interface
-
-
+##
  ## 🛠 Tech Stack
 
 ### Android
