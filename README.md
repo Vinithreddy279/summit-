@@ -1,21 +1,55 @@
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+
+# 🏔 Summit
+
+### Premium Outdoor Fitness & Hiking Tracker
+
+Track hikes, runs, and walks with real-time GPS, offline maps, weather integration, and detailed activity analytics.
+
+<p>
+  <img src="https://img.shields.io/badge/Android-14+-3DDC84?logo=android&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Kotlin-2.x-7F52FF?logo=kotlin&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white"/>
+  <img src="https://img.shields.io/badge/MVVM-Architecture-orange"/>
+  <img src="https://img.shields.io/badge/OpenStreetMap-7EBC6F"/>
+</p>
+
 </div>
 
-# Run and deploy your AI Studio app
+────────────────────────────────────────────
 
-This contains everything you need to run your app locally.
+           🏔 SUMMIT
 
-View your app in AI Studio: https://ai.studio/apps/4ad05929-2644-42af-9d62-e0bb9c3d7abc
+Outdoor Fitness & Hiking Tracker
 
-## Run Locally
+GPS • Offline Maps • Hiking • Analytics
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+────────────────────────────────────────────
+
+## 📖 About
+
+Summit is a premium Android outdoor fitness application inspired by Strava and AllTrails.
+
+It enables users to track hiking, running, and walking activities with real-time GPS recording, offline OpenStreetMap support, weather integration, GPX import/export, and detailed performance analytics.
+
+The app is built using modern Android development practices including Jetpack Compose, MVVM architecture, and Room Database.
 
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+## ✨ Features
+
+- 🛰️ Real-time GPS Tracking
+- 🗺️ Offline OpenStreetMap
+- 🥾 Hiking Mode
+- 🏃 Running Mode
+- 🚶 Walking Mode
+- ⏸️ Auto Pause & Resume
+- 📈 Activity Analytics
+- ⛰️ Elevation Tracking
+- 🔥 Calorie Estimation
+- 🌦️ Weather Integration
+- 📂 GPX Import
+- 📤 GPX Export
+- 💾 Room Database
+- 🌙 Material 3 UI
+
+
