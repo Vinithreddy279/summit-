@@ -66,6 +66,8 @@ The app is built using modern Android development practices including Jetpack Co
 |----------|---------|
 | ![](images/weather.png) | ![](images/profile.png) |
 
+
+
 User Interface
       │
       ▼
