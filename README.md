@@ -65,3 +65,77 @@ The app is built using modern Android development practices including Jetpack Co
 | Weather | Profile |
 |----------|---------|
 | ![](images/weather.png) | ![](images/profile.png) |
+
+User Interface
+      │
+      ▼
+Jetpack Compose
+      │
+      ▼
+ViewModel
+      │
+      ▼
+Repository
+      │
+ ┌──────────────┐
+ │ Room DB      │
+ │ GPS Service  │
+ │ Weather API  │
+ │ OpenStreetMap│
+ └──────────────┘
+
+
+ ## 🛠 Tech Stack
+
+### Android
+
+- Kotlin
+- Jetpack Compose
+- Coroutines
+- Material 3
+
+### Architecture
+
+- MVVM
+- Repository Pattern
+
+### Database
+
+- Room
+
+### Maps
+
+- OpenStreetMap (osmdroid)
+
+### APIs
+
+- Weather API
+- Fused Location Provider
+
+## 🚀 Roadmap
+
+- [x] GPS Tracking
+- [x] Hiking
+- [x] Running
+- [x] Walking
+- [x] Offline Maps
+- [x] GPX Import
+- [x] GPX Export
+- [x] Weather
+
+### Planned
+
+- [ ] Cloud Sync
+- [ ] Wear OS Support
+- [ ] AI Coach
+- [ ] Social Sharing
+
+## 👨‍💻 Developer
+
+**Vinith Reddy**
+
+🌐 Portfolio  
+https://vinithreddy.vercel.app
+
+💻 GitHub  
+https://github.com/Vinithreddy279
