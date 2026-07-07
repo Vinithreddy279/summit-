@@ -54,19 +54,15 @@ The app is built using modern Android development practices including Jetpack Co
 
 ## 📱 Screenshots
 
-| Home | Live Tracking |
-|------|---------------|
-| ![](images/home.png) | ![](images/tracking.png) |
+<p align="center">
+  <img src="images/home.png" width="220" alt="Home Screen"/>
+  <img src="images/tracking.png" width="220" alt="Activity History"/>
+</p>
 
-| Map | Activity |
-|------|----------|
-| ![](images/map.png) | ![](images/history.png) |
-
-| Weather | Profile |
-|----------|---------|
-| ![](images/weather.png) | ![](images/profile.png) |
-
-
+<p align="center">
+  <img src="images/weather.png" width="220" alt="Weather Dashboard"/>
+  <img src="images/map.png" width="220" alt="Live GPS Tracking"/>
+</p>
 
 User Interface
       │
