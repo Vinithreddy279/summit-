@@ -49,13 +49,17 @@ The app is built using modern Android development practices including Jetpack Co
 
 
 ## 📱 Screenshots
+## 📱 Screenshots
 
-<img src="home.png" width="220"/>
-<img src="weather.png" width="220"/>
-<img src="map.png" width="220"/>
-<img src="tracking.png" width="220"/>
+<p align="center">
+  <img src="home.png" alt="Home" width="220"/>
+  <img src="weather.png" alt="Weather" width="220"/>
+</p>
 
-
+<p align="center">
+  <img src="map.png" alt="Live Tracking" width="220"/>
+  <img src="tracking.png" alt="Activity History" width="220"/>
+</p>
 
 ##
  ## 🛠 Tech Stack
