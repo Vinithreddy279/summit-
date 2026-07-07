@@ -71,10 +71,24 @@ The app is built using modern Android development practices including Jetpack Co
 - Coroutines
 - Material 3
 
-### Architecture
+## 🏗️ Architecture
 
-- MVVM
-- Repository Pattern
+```text
+UI (Jetpack Compose)
+        │
+        ▼
+    ViewModel
+        │
+        ▼
+    Repository
+        │
+ ┌───────────────┐
+ │ Room Database │
+ │ GPS Service   │
+ │ Weather API   │
+ │ OpenStreetMap │
+ └───────────────┘
+```
 
 ### Database
 
