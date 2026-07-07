@@ -52,4 +52,16 @@ The app is built using modern Android development practices including Jetpack Co
 - 💾 Room Database
 - 🌙 Material 3 UI
 
+## 📱 Screenshots
 
+| Home | Live Tracking |
+|------|---------------|
+| ![](images/home.png) | ![](images/tracking.png) |
+
+| Map | Activity |
+|------|----------|
+| ![](images/map.png) | ![](images/history.png) |
+
+| Weather | Profile |
+|----------|---------|
+| ![](images/weather.png) | ![](images/profile.png) |
