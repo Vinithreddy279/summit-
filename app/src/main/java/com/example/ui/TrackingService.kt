@@ -409,7 +409,8 @@ class TrackingService : Service() {
                         lng = location.longitude,
                         elevation = location.altitude,
                         timeMs = System.currentTimeMillis(),
-                        speedMps = location.speed.toDouble()
+                        speedMps = location.speed.toDouble(),
+                        hasElevation = location.hasAltitude()
                     )
                     pts.add(point)
                     trackpoints.value = pts

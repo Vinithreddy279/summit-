@@ -13,6 +13,7 @@ class SummitRepository(private val db: AppDatabase) {
     private val userDao = db.userDao()
     private val routeDao = db.routeDao()
     private val weatherDao = db.weatherDao()
+    private val targetHikeDao = db.targetHikeDao()
 
     val gears: Flow<List<Gear>> = gearDao.getAllGears()
     val activities: Flow<List<Activity>> = activityDao.getAllActivities()
@@ -183,4 +184,96 @@ class SummitRepository(private val db: AppDatabase) {
     suspend fun insertUser(user: User): Long = userDao.insertUser(user)
     suspend fun updateUser(user: User) = userDao.updateUser(user)
     suspend fun deleteUser(user: User) = userDao.deleteUser(user)
+
+    // Target Hike Actions
+    fun observeActiveTarget(): Flow<TargetHike?> = targetHikeDao.observeActiveTarget()
+    suspend fun getActiveTarget(): TargetHike? = targetHikeDao.getActiveTarget()
+    suspend fun setActiveTarget(target: TargetHike): Long = targetHikeDao.setActiveTargetTransaction(target)
+    suspend fun updateTarget(target: TargetHike) = targetHikeDao.updateTargetHike(target)
+    suspend fun completeTarget(targetId: Long) = targetHikeDao.updateTargetStatus(targetId, "COMPLETED")
+    suspend fun archiveTarget(targetId: Long) = targetHikeDao.updateTargetStatus(targetId, "ARCHIVED")
+    fun observeTargetHistory(): Flow<List<TargetHike>> = targetHikeDao.observeTargetHistory()
+
+    // Progression Actions
+    private val progressionDao = db.progressionDao()
+
+    fun observeActivePlanForTarget(targetHikeId: Long): Flow<ProgressionPlanEntity?> =
+        progressionDao.observeActivePlanForTarget(targetHikeId)
+
+    suspend fun getActivePlanForTarget(targetHikeId: Long): ProgressionPlanEntity? =
+        progressionDao.getActivePlanForTarget(targetHikeId)
+
+    fun observeStepsForPlan(planId: Long): Flow<List<ProgressionStepEntity>> =
+        progressionDao.observeStepsForPlan(planId)
+
+    suspend fun getStepsForPlan(planId: Long): List<ProgressionStepEntity> =
+        progressionDao.getStepsForPlan(planId)
+
+    suspend fun insertPlan(plan: ProgressionPlanEntity): Long =
+        progressionDao.insertPlan(plan)
+
+    suspend fun insertSteps(steps: List<ProgressionStepEntity>) =
+        progressionDao.insertSteps(steps)
+
+    suspend fun updatePlan(plan: ProgressionPlanEntity) =
+        progressionDao.updatePlan(plan)
+
+    suspend fun updateStep(step: ProgressionStepEntity) =
+        progressionDao.updateStep(step)
+
+    suspend fun getCurrentStep(planId: Long): ProgressionStepEntity? =
+        progressionDao.getCurrentStep(planId)
+
+    suspend fun createActivePlanWithSteps(plan: ProgressionPlanEntity, steps: List<ProgressionStepEntity>) =
+        progressionDao.createActivePlanWithSteps(plan, steps)
+
+    suspend fun completeStepTransaction(planId: Long, stepId: Long, activityId: Long, completedAt: Long = System.currentTimeMillis()) =
+        progressionDao.completeStepTransaction(planId, stepId, activityId, completedAt)
+
+    suspend fun archiveActivePlanForTarget(targetHikeId: Long) =
+        progressionDao.archiveActivePlanForTarget(targetHikeId)
+
+    // Readiness History Actions
+    private val readinessHistoryDao = db.readinessHistoryDao()
+
+    fun observeReadinessHistoryForTarget(targetHikeId: Long): Flow<List<ReadinessHistoryEntity>> =
+        readinessHistoryDao.observeReadinessHistoryForTarget(targetHikeId)
+
+    suspend fun getReadinessHistoryForTarget(targetHikeId: Long): List<ReadinessHistoryEntity> =
+        readinessHistoryDao.getReadinessHistoryForTarget(targetHikeId)
+
+    suspend fun getLatestReadinessSnapshotForTarget(targetHikeId: Long): ReadinessHistoryEntity? =
+        readinessHistoryDao.getLatestReadinessSnapshotForTarget(targetHikeId)
+
+    suspend fun insertReadinessSnapshot(snapshot: ReadinessHistoryEntity): Long =
+        readinessHistoryDao.insertReadinessSnapshot(snapshot)
+
+    suspend fun findSnapshotForActivity(targetHikeId: Long, activityId: Long): ReadinessHistoryEntity? =
+        readinessHistoryDao.findSnapshotForActivity(targetHikeId, activityId)
+
+    suspend fun ensureBaselineSnapshot(targetHikeId: Long, readiness: ReadinessResult, recordedAt: Long = System.currentTimeMillis()) {
+        val existing = getReadinessHistoryForTarget(targetHikeId)
+        if (existing.isEmpty()) {
+            val baseline = ReadinessHistoryEntity(
+                targetHikeId = targetHikeId,
+                activityId = null,
+                progressionPlanId = null,
+                progressionStepId = null,
+                overallScore = readiness.overallScore,
+                distanceScore = readiness.distanceScore,
+                elevationScore = readiness.elevationScore,
+                enduranceScore = readiness.enduranceScore,
+                recentLoadScore = readiness.recentLoadScore,
+                mainLimiter = readiness.mainLimiter.name,
+                readinessLevel = readiness.readinessLevel.name,
+                recordedAt = recordedAt,
+                reason = "BASELINE"
+            )
+            insertReadinessSnapshot(baseline)
+        }
+    }
+
+    suspend fun applyAdaptationTransaction(planId: Long, changes: List<ProgressionStepChange>) =
+        progressionDao.applyAdaptationTransaction(planId, changes)
 }
+

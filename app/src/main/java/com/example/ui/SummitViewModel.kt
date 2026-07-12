@@ -96,6 +96,334 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     val routes: StateFlow<List<Route>> = repository.routes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val activeTarget: StateFlow<TargetHike?> = repository.observeActiveTarget()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val readinessResult: StateFlow<ReadinessResult?> = activeTarget
+        .combine(activities) { target, activityList ->
+            if (target != null) {
+                ReadinessEngine.calculate(target, activityList, System.currentTimeMillis())
+            } else {
+                null
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val progressionPlan: StateFlow<ProgressionPlan?> = activeTarget
+        .combine(readinessResult) { target, readiness ->
+            if (target != null && readiness != null) {
+                ProgressionEngine.calculate(target, readiness)
+            } else {
+                null
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    // Persisted active progression plan
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val activeProgressionPlan: StateFlow<ProgressionPlanEntity?> = activeTarget
+        .flatMapLatest { target ->
+            if (target != null) {
+                repository.observeActivePlanForTarget(target.id)
+            } else {
+                flowOf(null)
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val activeProgressionSteps: StateFlow<List<ProgressionStepEntity>> = activeProgressionPlan
+        .flatMapLatest { plan ->
+            if (plan != null) {
+                repository.observeStepsForPlan(plan.id)
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val readinessHistory: StateFlow<List<ReadinessHistoryEntity>> = activeTarget
+        .flatMapLatest { target ->
+            if (target != null) {
+                repository.observeReadinessHistoryForTarget(target.id)
+                    .map { list -> list.take(5000) }
+            } else {
+                flowOf(emptyList())
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val dismissedProposal = MutableStateFlow<ProgressionAdaptationProposal?>(null)
+
+    fun dismissAdaptationProposal(proposal: ProgressionAdaptationProposal) {
+        dismissedProposal.value = proposal
+    }
+
+    val activeAdaptationProposal: StateFlow<ProgressionAdaptationProposal?> = combine(
+        activeTarget,
+        readinessResult,
+        activeProgressionPlan,
+        activeProgressionSteps,
+        dismissedProposal
+    ) { target, readiness, plan, steps, dismissed ->
+        if (target != null && readiness != null && plan != null && steps.isNotEmpty()) {
+            val evaluated = ProgressionAdaptationEngine.evaluate(target, readiness, plan, steps)
+            if (evaluated.state == ProgressionAdaptationState.UPDATE_AVAILABLE) {
+                if (dismissed != null && 
+                    dismissed.planId == evaluated.planId && 
+                    dismissed.currentReadiness == evaluated.currentReadiness &&
+                    dismissed.changes.size == evaluated.changes.size &&
+                    dismissed.changes.zip(evaluated.changes).all { (d, e) ->
+                        d.stepId == e.stepId &&
+                        d.newDistanceMeters == e.newDistanceMeters &&
+                        d.newElevationGainMeters == e.newElevationGainMeters &&
+                        d.newDurationMinutes == e.newDurationMinutes &&
+                        d.newFocusDimension == e.newFocusDimension
+                    }
+                ) {
+                    null
+                } else {
+                    evaluated
+                }
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+    }
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+
+    // Recording context variables
+    private val _recordingProgressionPlanId = MutableStateFlow<Long?>(null)
+    val recordingProgressionPlanId: StateFlow<Long?> = _recordingProgressionPlanId.asStateFlow()
+
+    private val _recordingProgressionStepId = MutableStateFlow<Long?>(null)
+    val recordingProgressionStepId: StateFlow<Long?> = _recordingProgressionStepId.asStateFlow()
+
+    // Transient impact review variables
+    private val _showImpactReviewScreen = MutableStateFlow(false)
+    val showImpactReviewScreen: StateFlow<Boolean> = _showImpactReviewScreen.asStateFlow()
+
+    private val _transientActivityReadinessImpact = MutableStateFlow<ActivityReadinessImpact?>(null)
+    val transientActivityReadinessImpact: StateFlow<ActivityReadinessImpact?> = _transientActivityReadinessImpact.asStateFlow()
+
+    private val _transientMatchResult = MutableStateFlow<ProgressionStepMatchResult?>(null)
+    val transientMatchResult: StateFlow<ProgressionStepMatchResult?> = _transientMatchResult.asStateFlow()
+
+    private val _transientCompletedActivity = MutableStateFlow<Activity?>(null)
+    val transientCompletedActivity: StateFlow<Activity?> = _transientCompletedActivity.asStateFlow()
+
+    private val _transientStep = MutableStateFlow<ProgressionStepEntity?>(null)
+    val transientStep: StateFlow<ProgressionStepEntity?> = _transientStep.asStateFlow()
+
+    fun startProgression(plan: ProgressionPlan) {
+        viewModelScope.launch {
+            val target = activeTarget.value ?: return@launch
+            val stepsToSave = plan.steps.map { step ->
+                ProgressionStepEntity(
+                    planId = 0,
+                    stepNumber = step.stepNumber,
+                    type = step.type.name,
+                    title = step.title,
+                    targetDistanceMeters = step.targetDistanceMeters,
+                    targetElevationGainMeters = step.targetElevationGainMeters,
+                    targetDurationMinutes = step.targetDurationMinutes,
+                    focusDimension = step.focusDimension?.name,
+                    isTargetHike = step.isTargetHike,
+                    status = "PENDING"
+                )
+            }
+            val planEntity = ProgressionPlanEntity(
+                targetHikeId = target.id,
+                startingReadinessScore = plan.startingReadinessScore,
+                mainLimiter = plan.mainLimiter.name,
+                isLimitedHistory = plan.isLimitedHistory,
+                state = "ACTIVE",
+                currentStepIndex = 0,
+                status = "ACTIVE"
+            )
+            repository.createActivePlanWithSteps(planEntity, stepsToSave)
+        }
+    }
+
+    fun launchTrackerForStep(planId: Long, stepId: Long) {
+        _recordingProgressionPlanId.value = planId
+        _recordingProgressionStepId.value = stepId
+        _currentTab.value = Tab.RECORD // Navigate to record tab
+    }
+
+    fun completeStep(planId: Long, stepId: Long, activityId: Long) {
+        viewModelScope.launch {
+            val target = activeTarget.value
+            val impact = _transientActivityReadinessImpact.value
+            val stepEntity = _transientStep.value
+
+            // 1. Ensure BASELINE exists if not already present
+            if (target != null && impact != null) {
+                val beforeReadiness = ReadinessResult(
+                    overallScore = impact.overallBefore,
+                    distanceScore = impact.distanceBefore,
+                    elevationScore = impact.elevationBefore ?: 0,
+                    enduranceScore = impact.enduranceBefore,
+                    recentLoadScore = impact.recentLoadBefore,
+                    mainLimiter = impact.mainLimiterBefore,
+                    readinessLevel = if (impact.overallBefore >= 90) ReadinessLevel.READY else ReadinessLevel.BUILDING,
+                    evidence = ReadinessEvidence(0.0, 0.0, 0.0, null, 0.0, 0.0, 0, 0.0, 0.0, 0, 0, 0, emptyList(), 0)
+                )
+                repository.ensureBaselineSnapshot(target.id, beforeReadiness, recordedAt = System.currentTimeMillis() - 5000)
+            }
+
+            // 2. Perform the database step completion transaction
+            repository.completeStepTransaction(planId, stepId, activityId)
+
+            // 3. Save ACTIVITY_IMPACT snapshot after step is completed
+            if (target != null && impact != null && stepEntity != null) {
+                val existingSnapshot = repository.findSnapshotForActivity(target.id, activityId)
+                if (existingSnapshot == null) {
+                    val afterSnapshot = ReadinessHistoryEntity(
+                        targetHikeId = target.id,
+                        activityId = activityId,
+                        progressionPlanId = planId,
+                        progressionStepId = stepId,
+                        overallScore = impact.overallAfter,
+                        distanceScore = impact.distanceAfter,
+                        elevationScore = impact.elevationAfter,
+                        enduranceScore = impact.enduranceAfter,
+                        recentLoadScore = impact.recentLoadAfter,
+                        mainLimiter = impact.mainLimiterAfter.name,
+                        readinessLevel = if (impact.overallAfter >= 90) ReadinessLevel.READY.name else ReadinessLevel.BUILDING.name,
+                        recordedAt = System.currentTimeMillis(),
+                        reason = "ACTIVITY_IMPACT"
+                    )
+                    repository.insertReadinessSnapshot(afterSnapshot)
+                }
+
+                // 4. Check if final step completion completed the target hike (TARGET_COMPLETED snapshot)
+                val updatedSteps = repository.getStepsForPlan(planId)
+                val allCompleted = updatedSteps.all { it.status == "COMPLETED" }
+                if (allCompleted) {
+                    val finalSnapshot = ReadinessHistoryEntity(
+                        targetHikeId = target.id,
+                        activityId = null,
+                        progressionPlanId = planId,
+                        progressionStepId = null,
+                        overallScore = impact.overallAfter,
+                        distanceScore = impact.distanceAfter,
+                        elevationScore = impact.elevationAfter,
+                        enduranceScore = impact.enduranceAfter,
+                        recentLoadScore = impact.recentLoadAfter,
+                        mainLimiter = impact.mainLimiterAfter.name,
+                        readinessLevel = ReadinessLevel.READY.name,
+                        recordedAt = System.currentTimeMillis() + 1000,
+                        reason = "TARGET_COMPLETED"
+                    )
+                    repository.insertReadinessSnapshot(finalSnapshot)
+                }
+            }
+
+            _showImpactReviewScreen.value = false
+            _transientActivityReadinessImpact.value = null
+            _transientMatchResult.value = null
+            _transientCompletedActivity.value = null
+            _transientStep.value = null
+            _currentTab.value = Tab.DASHBOARD // Return to home screen or dashboard
+        }
+    }
+
+    fun acceptPlanUpdate(proposal: ProgressionAdaptationProposal) {
+        viewModelScope.launch {
+            val target = activeTarget.value ?: return@launch
+            val currentReadiness = readinessResult.value ?: return@launch
+
+            val plan = repository.getActivePlanForTarget(target.id) ?: return@launch
+            if (plan.id != proposal.planId || plan.status != "ACTIVE") return@launch
+
+            val currentSteps = repository.getStepsForPlan(plan.id)
+            val freshProposal = ProgressionAdaptationEngine.evaluate(target, currentReadiness, plan, currentSteps)
+
+            if (freshProposal.state != ProgressionAdaptationState.UPDATE_AVAILABLE) {
+                triggerNotification("Adaptation Not Applied", "Plan metrics are already up to date.", "⚠️")
+                return@launch
+            }
+
+            repository.applyAdaptationTransaction(plan.id, freshProposal.changes)
+            triggerNotification("Plan Adapted! 📈", "Your remaining pending progression steps have been adapted based on latest capacity.", "📈")
+        }
+    }
+
+    fun keepCurrentStep() {
+        _showImpactReviewScreen.value = false
+        _transientActivityReadinessImpact.value = null
+        _transientMatchResult.value = null
+        _transientCompletedActivity.value = null
+        _transientStep.value = null
+        _currentTab.value = Tab.DASHBOARD // Or wherever is clean
+    }
+
+    fun setShowImpactReviewScreen(show: Boolean) {
+        _showImpactReviewScreen.value = show
+    }
+
+    val targetHistory: StateFlow<List<TargetHike>> = repository.observeTargetHistory()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _showSetTargetScreen = MutableStateFlow(false)
+    val showSetTargetScreen: StateFlow<Boolean> = _showSetTargetScreen.asStateFlow()
+
+    private val _showReadinessScreen = MutableStateFlow(false)
+    val showReadinessScreen: StateFlow<Boolean> = _showReadinessScreen.asStateFlow()
+
+    private val _showProgressionScreen = MutableStateFlow(false)
+    val showProgressionScreen: StateFlow<Boolean> = _showProgressionScreen.asStateFlow()
+
+    private val _targetToReview = MutableStateFlow<TargetHike?>(null)
+    val targetToReview: StateFlow<TargetHike?> = _targetToReview.asStateFlow()
+
+    fun setShowSetTargetScreen(show: Boolean) {
+        _showSetTargetScreen.value = show
+    }
+
+    fun setShowReadinessScreen(show: Boolean) {
+        _showReadinessScreen.value = show
+    }
+
+    fun setShowProgressionScreen(show: Boolean) {
+        _showProgressionScreen.value = show
+    }
+
+    fun setTargetToReview(target: TargetHike?) {
+        _targetToReview.value = target
+    }
+
+    fun saveActiveTarget(target: TargetHike) {
+        viewModelScope.launch {
+            repository.setActiveTarget(target)
+            triggerNotification("Target Set 🎯", "Successfully established '${target.name}' as your active target!", "🎯")
+        }
+    }
+
+    fun updateTarget(target: TargetHike) {
+        viewModelScope.launch {
+            repository.updateTarget(target)
+        }
+    }
+
+    fun completeTarget(targetId: Long) {
+        viewModelScope.launch {
+            repository.completeTarget(targetId)
+            triggerNotification("Target Completed 🏆", "Congratulations! You completed your target hike!", "🏆")
+        }
+    }
+
+    fun archiveTarget(targetId: Long) {
+        viewModelScope.launch {
+            repository.archiveTarget(targetId)
+        }
+    }
+
     // Customizable Feed States
     private val _feedSportFilter = MutableStateFlow("all")
     val feedSportFilter: StateFlow<String> = _feedSportFilter.asStateFlow()
@@ -405,7 +733,8 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
                 timestamp = System.currentTimeMillis() - 86400000, // 1 day ago
                 gearId = gearShoesId,
                 routePointsJson = JsonHelper.pointsToJson(runPoints),
-                notes = "Felt great in the Pegasus 40s! Beautiful sunrise over SF."
+                notes = "Felt great in the Pegasus 40s! Beautiful sunrise over SF.",
+                hasElevationData = true
             )
         )
 
@@ -427,7 +756,8 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
                 timestamp = System.currentTimeMillis() - 172800000, // 2 days ago
                 gearId = gearBikeId,
                 routePointsJson = JsonHelper.pointsToJson(ridePoints),
-                notes = "Windy at the peak, specialized tarmac rolled super smoothly."
+                notes = "Windy at the peak, specialized tarmac rolled super smoothly.",
+                hasElevationData = true
             )
         )
 
@@ -746,10 +1076,18 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
         val maxSpeed = avgSpeed * 1.3 // estimated max speed
 
         // Calculate elevation gain
+        var hasElevationData = false
         var eleGain = 0.0
-        for (i in 1 until points.size) {
-            val diff = points[i].elevation - points[i - 1].elevation
-            if (diff > 0) eleGain += diff
+        for (i in 0 until points.size - 1) {
+            val p1 = points[i]
+            val p2 = points[i + 1]
+            if (p1.hasElevation && p2.hasElevation) {
+                hasElevationData = true
+                val diff = p2.elevation - p1.elevation
+                if (diff > 0.0) {
+                    eleGain += diff
+                }
+            }
         }
 
         val activity = Activity(
@@ -769,17 +1107,66 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
             gearId = _recordingGearId.value,
             routePointsJson = JsonHelper.pointsToJson(points),
             notes = notes,
-            privacy = privacy
+            privacy = privacy,
+            hasElevationData = hasElevationData
         )
 
         viewModelScope.launch {
+            val beforeReadiness = readinessResult.value
+            val target = activeTarget.value
+            val stepId = _recordingProgressionStepId.value
+            val planId = _recordingProgressionPlanId.value
+
             val activityId = repository.saveRecordedActivity(activity)
+            val savedActivity = activity.copy(id = activityId)
+
             triggerNotification("Workout Saved 🎉", "Successfully saved '${activity.title}'! It's posted to the community.")
             _recordingDurationSeconds.value = 0L
             _recordingDistanceKm.value = 0.0
             _recordingTrackpoints.value = emptyList()
-            _currentTab.value = Tab.SOCIAL_FEED // jump to the feed to see your workout card!
+
             simulateSocialInteractionsForActivity(activityId, activity.title)
+
+            if (stepId != null && planId != null && target != null && beforeReadiness != null) {
+                val stepsList = repository.getStepsForPlan(planId)
+                val stepEntity = stepsList.find { it.id == stepId }
+                if (stepEntity != null) {
+                    val updatedActivities = listOf(savedActivity) + activities.value.filter { it.id != savedActivity.id }
+                    val afterReadiness = ReadinessEngine.calculate(target, updatedActivities, System.currentTimeMillis())
+
+                    val impact = ActivityReadinessImpact(
+                        activityId = activityId,
+                        progressionStepId = stepId,
+                        overallBefore = beforeReadiness.overallScore,
+                        overallAfter = afterReadiness.overallScore,
+                        distanceBefore = beforeReadiness.distanceScore,
+                        distanceAfter = afterReadiness.distanceScore,
+                        elevationBefore = beforeReadiness.elevationScore,
+                        elevationAfter = afterReadiness.elevationScore,
+                        enduranceBefore = beforeReadiness.enduranceScore,
+                        enduranceAfter = afterReadiness.enduranceScore,
+                        recentLoadBefore = beforeReadiness.recentLoadScore,
+                        recentLoadAfter = afterReadiness.recentLoadScore,
+                        mainLimiterBefore = beforeReadiness.mainLimiter,
+                        mainLimiterAfter = afterReadiness.mainLimiter
+                    )
+
+                    val matchResult = ProgressionStepMatcher.match(stepEntity, savedActivity)
+
+                    _transientActivityReadinessImpact.value = impact
+                    _transientMatchResult.value = matchResult
+                    _transientCompletedActivity.value = savedActivity
+                    _transientStep.value = stepEntity
+                    _showImpactReviewScreen.value = true
+                } else {
+                    _currentTab.value = Tab.SOCIAL_FEED
+                }
+            } else {
+                _currentTab.value = Tab.SOCIAL_FEED
+            }
+
+            _recordingProgressionStepId.value = null
+            _recordingProgressionPlanId.value = null
         }
     }
 

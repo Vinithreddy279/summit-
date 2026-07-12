@@ -35,7 +35,8 @@ data class Activity(
     val isKudosedByMe: Boolean = false,
     val notes: String = "",
     val privacy: String = "Public", // "Public", "Friends Only", "Private"
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val hasElevationData: Boolean = false
 ) : Serializable
 
 @Entity(tableName = "segments")
@@ -112,4 +113,20 @@ data class Route(
     val isFavorite: Boolean = false,
     val dateCreated: Long = System.currentTimeMillis()
 ) : Serializable
+
+@Entity(tableName = "target_hikes")
+data class TargetHike(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val distanceMeters: Double,
+    val elevationGainMeters: Double,
+    val estimatedDurationMinutes: Int,
+    val maxElevationMeters: Double?,
+    val minElevationMeters: Double?,
+    val gpxPath: String?,
+    val createdAt: Long = System.currentTimeMillis(),
+    val status: String, // "ACTIVE", "COMPLETED", "ARCHIVED"
+    val hasElevationData: Boolean = true
+) : Serializable
+
 

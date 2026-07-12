@@ -120,21 +120,46 @@ fun SummitApp(viewModel: SummitViewModel) {
                         .background(SlateDarkBackground)
                         .padding(innerPadding)
                 ) {
-                    when (currentTab) {
-                        SummitViewModel.Tab.DASHBOARD -> DashboardScreen(viewModel)
-                        SummitViewModel.Tab.SOCIAL_FEED -> FeedScreen(viewModel)
-                        SummitViewModel.Tab.RECORD -> RecordScreen(viewModel)
-                        SummitViewModel.Tab.GEAR -> GearScreen(viewModel)
-                        SummitViewModel.Tab.SEGMENTS -> SegmentsScreen(viewModel)
-                    }
+                    val showSetTargetScreen by viewModel.showSetTargetScreen.collectAsStateWithLifecycle()
+                    val showReadinessScreen by viewModel.showReadinessScreen.collectAsStateWithLifecycle()
+                    val showProgressionScreen by viewModel.showProgressionScreen.collectAsStateWithLifecycle()
+                    val showImpactReviewScreen by viewModel.showImpactReviewScreen.collectAsStateWithLifecycle()
+                    val targetToReview by viewModel.targetToReview.collectAsStateWithLifecycle()
 
-                    if (currentTab == SummitViewModel.Tab.DASHBOARD) {
-                        StartActivityFAB(
-                            onClick = { viewModel.setTab(SummitViewModel.Tab.RECORD) },
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(end = 20.dp, bottom = 20.dp)
-                        )
+                    when {
+                        showImpactReviewScreen -> {
+                            ImpactReviewScreen(viewModel)
+                        }
+                        showProgressionScreen -> {
+                            ProgressionScreen(viewModel)
+                        }
+                        showReadinessScreen -> {
+                            ReadinessScreen(viewModel)
+                        }
+                        targetToReview != null -> {
+                            TargetReviewScreen(viewModel)
+                        }
+                        showSetTargetScreen -> {
+                            SetTargetHikeScreen(viewModel)
+                        }
+                        else -> {
+                            when (currentTab) {
+                                SummitViewModel.Tab.DASHBOARD -> DashboardScreen(viewModel)
+                                SummitViewModel.Tab.SOCIAL_FEED -> FeedScreen(viewModel)
+                                SummitViewModel.Tab.RECORD -> RecordScreen(viewModel)
+                                SummitViewModel.Tab.GEAR -> GearScreen(viewModel)
+                                SummitViewModel.Tab.SEGMENTS -> SegmentsScreen(viewModel)
+                            }
+
+                            if (currentTab == SummitViewModel.Tab.DASHBOARD) {
+                                StartActivityFAB(
+                                    onClick = { viewModel.setTab(SummitViewModel.Tab.RECORD) },
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(end = 20.dp, bottom = 20.dp)
+                                )
+                            }
+                        }
                     }
 
                     // Comments Overlay Dialog
@@ -2788,6 +2813,11 @@ fun PaceDistributionContent(activities: List<com.example.data.Activity>) {
 fun DashboardScreen(viewModel: SummitViewModel) {
     val activities by viewModel.activities.collectAsStateWithLifecycle()
     val gears by viewModel.gears.collectAsStateWithLifecycle()
+    val activeTarget by viewModel.activeTarget.collectAsStateWithLifecycle()
+    val readinessResult by viewModel.readinessResult.collectAsStateWithLifecycle()
+    val activeProgressionPlan by viewModel.activeProgressionPlan.collectAsStateWithLifecycle()
+    val activeProgressionSteps by viewModel.activeProgressionSteps.collectAsStateWithLifecycle()
+    val readinessHistory by viewModel.readinessHistory.collectAsStateWithLifecycle()
 
     var showSettings by remember { mutableStateOf(false) }
     var showMonthlySummary by remember { mutableStateOf(false) }
@@ -2912,6 +2942,424 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        item {
+            val target = activeTarget
+            if (target == null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.2f)), RoundedCornerShape(16.dp)),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = SlateCardSurface)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "WHAT'S YOUR NEXT SUMMIT?",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            color = SlateTextPrimary,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Choose a hike you want to complete and analyze its demands.",
+                            fontSize = 12.sp,
+                            color = SlateTextSecondary,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Button(
+                            onClick = { viewModel.setShowSetTargetScreen(true) },
+                            colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .testTag("set_target_hike_button")
+                        ) {
+                            Text(
+                                text = "SET TARGET HIKE",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.4f)), RoundedCornerShape(16.dp)),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = SlateCardSurface)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "YOUR NEXT SUMMIT",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                color = OrangePrimary,
+                                letterSpacing = 1.sp
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(OrangePrimary.copy(alpha = 0.1f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "ACTIVE",
+                                    color = OrangePrimary,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = target.name,
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SlateTextPrimary
+                            )
+                            Text(
+                                text = if (target.hasElevationData) {
+                                    String.format("%.1f km  •  %,d m elevation", target.distanceMeters / 1000.0, target.elevationGainMeters.toInt())
+                                } else {
+                                    String.format("%.1f km  •  Elevation unavailable", target.distanceMeters / 1000.0)
+                                },
+                                fontSize = 13.sp,
+                                color = SlateTextSecondary
+                            )
+                        }
+
+                        val rr = readinessResult
+                        if (rr != null) {
+                            HorizontalDivider(color = SlateTextSecondary.copy(alpha = 0.1f))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "READINESS",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SlateTextSecondary
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${rr.overallScore}%",
+                                            fontSize = 20.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = getReadinessColor(rr.readinessLevel)
+                                        )
+                                        
+                                        val baseline = readinessHistory.find { it.reason == "BASELINE" }
+                                        if (baseline != null) {
+                                            val delta = rr.overallScore - baseline.overallScore
+                                            val deltaText = when {
+                                                delta > 0 -> "  •  ↑ $delta points since start"
+                                                delta < 0 -> "  •  ↓ ${kotlin.math.abs(delta)} points since start"
+                                                else -> "  •  No change since start"
+                                            }
+                                            Text(
+                                                text = deltaText,
+                                                fontSize = 12.sp,
+                                                color = if (delta > 0) Color(0xFF10B981) else if (delta < 0) Color(0xFFEF4444) else SlateTextSecondary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = getReadinessLabel(rr.readinessLevel),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = getReadinessColor(rr.readinessLevel)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            Column {
+                                Text(
+                                    text = "MAIN FOCUS",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextSecondary
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = when (rr.mainLimiter) {
+                                        ReadinessDimension.DISTANCE -> "DISTANCE CAPACITY"
+                                        ReadinessDimension.ELEVATION -> "CLIMBING ENDURANCE"
+                                        ReadinessDimension.ENDURANCE -> "DURATION ENDURANCE"
+                                        ReadinessDimension.RECENT_LOAD -> "RECENT CONSISTENCY"
+                                    },
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextPrimary
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { viewModel.setShowReadinessScreen(true) },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = OrangePrimary),
+                                border = BorderStroke(1.dp, OrangePrimary),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("view_readiness_button")
+                            ) {
+                                Text(
+                                    text = "VIEW READINESS",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = OrangePrimary
+                                )
+                            }
+
+                            Button(
+                                onClick = { viewModel.setShowProgressionScreen(true) },
+                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .testTag("view_progression_home_button")
+                            ) {
+                                Text(
+                                    text = "VIEW PROGRESSION",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        val target = activeTarget
+        if (target != null) {
+            item {
+                val activePlan = activeProgressionPlan
+                val activeSteps = activeProgressionSteps
+                if (activePlan != null && activeSteps.isNotEmpty()) {
+                    val currentStepIndex = activePlan.currentStepIndex
+                    val currentStep = activeSteps.getOrNull(currentStepIndex)
+                    if (currentStep != null) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.3f)), RoundedCornerShape(16.dp)),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = SlateCardSurface)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "PREPARATION PROGRESSION",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = OrangePrimary,
+                                        letterSpacing = 1.sp
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFF10B981).copy(alpha = 0.1f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "STEP ${currentStepIndex + 1} OF ${activeSteps.size}",
+                                            color = Color(0xFF10B981),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Black
+                                        )
+                                    }
+                                }
+
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = currentStep.title.uppercase(),
+                                        fontSize = 16.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SlateTextPrimary
+                                    )
+                                    Text(
+                                        text = "Focus: ${currentStep.focusDimension}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = OrangePrimary
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    // Distance
+                                    Column {
+                                        Text("DISTANCE", fontSize = 9.sp, color = SlateTextSecondary)
+                                        val distVal = currentStep.targetDistanceMeters
+                                        Text(
+                                            text = if (distVal != null) String.format("%.1f km", distVal / 1000.0) else "—",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SlateTextPrimary
+                                        )
+                                    }
+                                    // Elevation
+                                    Column {
+                                        Text("ELEVATION", fontSize = 9.sp, color = SlateTextSecondary)
+                                        val elevVal = currentStep.targetElevationGainMeters
+                                        Text(
+                                            text = if (elevVal != null) String.format("%,d m", elevVal.toInt()) else "—",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SlateTextPrimary
+                                        )
+                                    }
+                                    // Duration
+                                    Column {
+                                        Text("EST. DURATION", fontSize = 9.sp, color = SlateTextSecondary)
+                                        val durVal = currentStep.targetDurationMinutes
+                                        val hours = (durVal ?: 0) / 60
+                                        val mins = (durVal ?: 0) % 60
+                                        Text(
+                                            text = if (durVal != null) (if (hours > 0) "${hours}h ${mins}m" else "${mins}m") else "—",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = SlateTextPrimary
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Button(
+                                    onClick = {
+                                        viewModel.launchTrackerForStep(activePlan.id, currentStep.id)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(44.dp)
+                                        .testTag("launch_tracker_dashboard_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Launch Tracker",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "LAUNCH TRACKER FOR STEP",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.2f)), RoundedCornerShape(16.dp)),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = SlateCardSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "START PREPARATION JOURNEY",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SlateTextPrimary
+                            )
+                            Text(
+                                text = "Establish a step-by-step roadmap tailored to the demands of ${target.name} based on your recent training history.",
+                                fontSize = 12.sp,
+                                color = SlateTextSecondary,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.setShowProgressionScreen(true)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(44.dp)
+                                    .testTag("start_journey_dashboard_button")
+                            ) {
+                                Text(
+                                    text = "START JOURNEY",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
         }
 
         item {
@@ -4148,6 +4596,61 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     fontWeight = FontWeight.Black,
                     color = SlateTextPrimary
                 )
+
+                // Progression Step Targeted Card
+                val activeStepId by viewModel.recordingProgressionStepId.collectAsStateWithLifecycle()
+                val activePlanSteps by viewModel.activeProgressionSteps.collectAsStateWithLifecycle()
+                val targetedStep = activePlanSteps.find { it.id == activeStepId }
+                if (targetedStep != null) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 12.dp)
+                            .testTag("recording_progression_banner"),
+                        colors = CardDefaults.cardColors(containerColor = OrangePrimary.copy(alpha = 0.1f)),
+                        border = BorderStroke(1.dp, OrangePrimary.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Terrain,
+                                contentDescription = "Progression Target",
+                                tint = OrangePrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "TARGETING PROGRESSION STEP",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = OrangePrimary,
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    text = targetedStep.title,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SlateTextPrimary
+                                )
+                                Text(
+                                    text = "Requirements: " + buildString {
+                                        val parts = mutableListOf<String>()
+                                        targetedStep.targetDistanceMeters?.let { parts.add(String.format("%.1f km", it / 1000.0)) }
+                                        targetedStep.targetElevationGainMeters?.let { parts.add(String.format("%,d m climb", it.toInt())) }
+                                        targetedStep.targetDurationMinutes?.let { parts.add("${it}m duration") }
+                                        append(parts.joinToString(", "))
+                                    },
+                                    fontSize = 12.sp,
+                                    color = SlateTextSecondary
+                                )
+                            }
+                        }
+                    }
+                }
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

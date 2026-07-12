@@ -70,6 +70,7 @@ object GpxParser {
         var currentLat: Double? = null
         var currentLon: Double? = null
         var currentEle = 0.0
+        var currentHasEle = false
         var currentTimeMs = 0L
 
         while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -83,6 +84,7 @@ object GpxParser {
                             currentLat = latAttr?.toDoubleOrNull()
                             currentLon = lonAttr?.toDoubleOrNull()
                             currentEle = 0.0
+                            currentHasEle = false
                             currentTimeMs = 0L
                         }
                     }
@@ -113,6 +115,7 @@ object GpxParser {
                             }
                             "ele" -> {
                                 currentEle = text.toDoubleOrNull() ?: 0.0
+                                currentHasEle = text.toDoubleOrNull() != null
                             }
                             "time" -> {
                                 try {
@@ -137,7 +140,8 @@ object GpxParser {
                                         lng = currentLon,
                                         elevation = currentEle,
                                         timeMs = currentTimeMs,
-                                        speedMps = 0.0
+                                        speedMps = 0.0,
+                                        hasElevation = currentHasEle
                                     )
                                 )
                             }
