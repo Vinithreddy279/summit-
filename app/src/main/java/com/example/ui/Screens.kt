@@ -2888,7 +2888,7 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                 
                 // Quick-Access Settings Toggle
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(15.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
@@ -5111,9 +5111,17 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                val isRecording by viewModel.isRecording.collectAsState()
+                val isPaused by viewModel.isPaused.collectAsState()
                 if (isRecording) {
                     Button(
-                        onClick = { viewModel.stopRecording() },
+                        onClick = { 
+                            if (isPaused) {
+                                viewModel.resumeRecording()
+                            } else {
+                                viewModel.pauseRecording()
+                            }
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = SlateCardSurfaceVariant),
                         modifier = Modifier
                             .weight(1f)
@@ -5121,9 +5129,17 @@ fun RecordScreen(viewModel: SummitViewModel) {
                         shape = RoundedCornerShape(25.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Pause, contentDescription = "Pause", tint = SlateTextPrimary)
+                            Icon(
+                                imageVector = if (isPaused) Icons.Filled.PlayArrow else Icons.Filled.Pause,
+                                contentDescription = if (isPaused) "Play" else "Pause",
+                                tint = SlateTextPrimary
+                            )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("PAUSE", color = SlateTextPrimary, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (isPaused) "PLAY" else "PAUSE",
+                                color = SlateTextPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 } else {
