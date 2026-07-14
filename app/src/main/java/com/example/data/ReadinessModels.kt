@@ -51,7 +51,7 @@ data class ReadinessEvidence(
 
 data class ActivityReadinessImpact(
     val activityId: Long,
-    val progressionStepId: Long,
+    val progressionStepId: Long?,
     val overallBefore: Int,
     val overallAfter: Int,
     val distanceBefore: Int,
@@ -63,7 +63,9 @@ data class ActivityReadinessImpact(
     val recentLoadBefore: Int,
     val recentLoadAfter: Int,
     val mainLimiterBefore: ReadinessDimension,
-    val mainLimiterAfter: ReadinessDimension
+    val mainLimiterAfter: ReadinessDimension,
+    val readinessLevelBefore: ReadinessLevel,
+    val readinessLevelAfter: ReadinessLevel
 ) : Serializable
 
 @Entity(

@@ -97,6 +97,7 @@ play-services-maps = { group = "com.google.android.gms", name = "play-services-m
 maps-compose = { group = "com.google.maps.android", name = "maps-compose", version.ref = "mapsCompose" }
 osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
 jbcrypt = { group = "org.mindrot", name = "jbcrypt", version.ref = "jbcrypt" }
+maplibre-android = { group = "org.maplibre.gl", name = "android-sdk", version = "10.0.2" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

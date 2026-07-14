@@ -70,6 +70,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.platform.LocalContext
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -2922,23 +2923,6 @@ fun DashboardScreen(viewModel: SummitViewModel) {
                             modifier = Modifier.size(18.dp)
                         )
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(SlateCardSurface)
-                            .border(1.dp, OrangeSecondary, CircleShape)
-                            .clickable { showSettings = true },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "S",
-                            color = OrangePrimary,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 16.sp
-                        )
-                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -4506,12 +4490,25 @@ fun RecordScreen(viewModel: SummitViewModel) {
     var activityNotes by remember { mutableStateOf("") }
     var selectedPrivacy by remember { mutableStateOf("Public") }
 
-    val permissionState = rememberMultiplePermissionsState(
-        permissions = listOf(
-            android.Manifest.permission.ACCESS_FINE_LOCATION,
-            android.Manifest.permission.ACCESS_COARSE_LOCATION
-        )
-    )
+    val permissionsToRequest = remember {
+        buildList {
+            add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            add(android.Manifest.permission.ACCESS_COARSE_LOCATION)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                add(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    val permissionState = rememberMultiplePermissionsState(permissions = permissionsToRequest)
+
+    val hasLocationPermission = remember(permissionState.permissions) {
+        permissionState.permissions.any {
+            (it.permission == android.Manifest.permission.ACCESS_FINE_LOCATION ||
+             it.permission == android.Manifest.permission.ACCESS_COARSE_LOCATION) &&
+            it.status.isGranted
+        }
+    }
 
     val activeGearName = gears.find { it.id == selectedGearId }?.name ?: "No Gear Selected"
 
@@ -4519,12 +4516,12 @@ fun RecordScreen(viewModel: SummitViewModel) {
     var gpsFixState by remember { mutableStateOf<android.location.Location?>(null) }
     var isCheckingGps by remember { mutableStateOf(false) }
 
-    DisposableEffect(selectedSimulationRoute, permissionState.allPermissionsGranted, isRecording) {
+    DisposableEffect(selectedSimulationRoute, hasLocationPermission, isRecording) {
         var callback: com.google.android.gms.location.LocationCallback? = null
         val fusedClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(context)
         
         if (!isRecording && (selectedSimulationRoute == "None" || selectedSimulationRoute == null)) {
-            if (permissionState.allPermissionsGranted) {
+            if (hasLocationPermission) {
                 isCheckingGps = true
                 
                 callback = object : com.google.android.gms.location.LocationCallback() {
@@ -4836,7 +4833,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                             .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("GPS Simulation Route (Demo Mode)", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
+                            Text("GPS Simulation Route", fontWeight = FontWeight.Bold, color = SlateTextPrimary)
                             Text("Great for testing segment matching directly in the web emulator!", fontSize = 11.sp, color = SlateTextSecondary)
                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -4924,12 +4921,12 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     .padding(16.dp)
             ) {
                 val isDemo = selectedSimulationRoute != "None" && selectedSimulationRoute != null
-                val needsGpsFix = !isDemo && permissionState.allPermissionsGranted
+                val needsGpsFix = !isDemo && hasLocationPermission
                 val hasGpsFix = gpsFixState != null
 
                 Button(
                     onClick = {
-                        if (selectedSimulationRoute == "None" && !permissionState.allPermissionsGranted) {
+                        if (selectedSimulationRoute == "None" && !hasLocationPermission) {
                             permissionState.launchMultiplePermissionRequest()
                         } else {
                             viewModel.startRecording()
@@ -4960,7 +4957,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = "Start recording", tint = Color.White)
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                if (!permissionState.allPermissionsGranted && selectedSimulationRoute == "None") "GRANT PERMISSION & START" else "START RECORDING",
+                                if (!hasLocationPermission && selectedSimulationRoute == "None") "GRANT PERMISSION & START" else "START RECORDING",
                                 fontWeight = FontWeight.Black,
                                 color = Color.White,
                                 fontSize = 16.sp
@@ -4974,176 +4971,144 @@ fun RecordScreen(viewModel: SummitViewModel) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(12.dp)
                 .navigationBarsPadding()
         ) {
-            // Live Recording Screen Dashboard
-            Card(
-                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
-                shape = RoundedCornerShape(24.dp),
+            // 1. COMPACT TOP STATUS
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(24.dp))
+                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isRecording) Color.Red else Color.Gray)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (isRecording) "RECORDING LIVE" else "PAUSED",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isRecording) Color.Red else Color.Gray
-                            )
-                        }
-                        Text(
-                            text = sportType.uppercase() + " | " + activeGearName,
-                            fontSize = 11.sp,
-                            color = SlateTextSecondary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // Timer / Clock
-                    Text("ELAPSED TIME", fontSize = 11.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                    Text(
-                        text = formatElapsedTime(durationSeconds),
-                        fontSize = 44.sp,
-                        fontWeight = FontWeight.Black,
-                        color = SlateTextPrimary
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(if (isRecording) Color.Red else Color.Gray)
                     )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                            Text("DISTANCE", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = String.format(Locale.US, "%.2f km", distanceKm),
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Black,
-                                color = OrangePrimary
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                            Text("PACE", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = if (currentPaceString.isNotBlank()) currentPaceString else if (avgPaceString.isNotBlank()) avgPaceString else "--:--/km",
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Black,
-                                color = SlateTextPrimary
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                            Text("SPEED", fontSize = 10.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
-                            Text(
-                                text = String.format(Locale.US, "%.1f km/h", currentSpeedKmh),
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Black,
-                                color = SlateTextPrimary
-                            )
-                        }
-                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isRecording) "RECORDING LIVE" else "PAUSED",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isRecording) Color.Red else Color.Gray
+                    )
                 }
+                
+                Text(
+                    text = sportType.uppercase() + " | " + activeGearName,
+                    fontSize = 11.sp,
+                    color = SlateTextSecondary,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = formatElapsedTime(durationSeconds),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    color = SlateTextPrimary
+                )
             }
 
-            val isDemo = selectedSimulationRoute != "None" && selectedSimulationRoute != null
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isDemo) Color(0xFFFFA726).copy(alpha = 0.15f) else Color(0xFF66BB6A).copy(alpha = 0.15f)
-                ),
-                shape = RoundedCornerShape(12.dp),
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 2. LARGE LIVE OUTDOOR MAP (Targeting 55-65% of screen height)
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp)
-                    .border(
-                        1.dp, 
-                        if (isDemo) Color(0xFFFFA726).copy(alpha = 0.4f) else Color(0xFF66BB6A).copy(alpha = 0.4f), 
-                        RoundedCornerShape(12.dp)
-                    )
+                    .weight(1.3f)
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(SlateCardSurface)
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp))
+            ) {
+                SummitOutdoorMapView(
+                    points = trackpoints,
+                    isLiveTracking = isRecording,
+                    sportType = sportType,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 3. COMPACT METRICS
+            Card(
+                colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(16.dp))
             ) {
                 Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .background(if (isDemo) Color(0xFFFFA726) else Color(0xFF66BB6A), CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
+                    // Distance Metric
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("DISTANCE", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
                         Text(
-                            text = if (isDemo) "🟠 DEMO MODE" else "🟢 LIVE GPS",
-                            color = if (isDemo) Color(0xFFFFA726) else Color(0xFF66BB6A),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            text = String.format(Locale.US, "%.2f km", distanceKm),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Black,
+                            color = OrangePrimary
                         )
                     }
-                    if (isDemo) {
+
+                    // Time Metric
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("TIME", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
                         Text(
-                            text = selectedSimulationRoute ?: "",
-                            color = SlateTextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            text = formatElapsedTime(durationSeconds),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Black,
+                            color = SlateTextPrimary
                         )
-                    } else if (trackpoints.isEmpty()) {
+                    }
+
+                    // Pace Metric
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("PACE", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "Waiting for GPS...",
-                            color = Color(0xFFFFA726),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
+                            text = if (currentPaceString.isNotBlank()) currentPaceString else if (avgPaceString.isNotBlank()) avgPaceString else "--:--/km",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Black,
+                            color = SlateTextPrimary
                         )
-                    } else {
-                        Text(
-                            text = String.format(Locale.US, "Accuracy: %.1fm", gpsAccuracyMeters),
-                            color = SlateTextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                    }
+
+                    // GPS Quality
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                        Text("GPS QUALITY", fontSize = 9.sp, color = SlateTextSecondary, fontWeight = FontWeight.Bold)
+                        val isDemo = selectedSimulationRoute != "None" && selectedSimulationRoute != null
+                        if (isDemo) {
+                            Text("Demo Mode", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color(0xFFFFA726))
+                        } else if (trackpoints.isEmpty()) {
+                            Text("No Fix", fontSize = 14.sp, fontWeight = FontWeight.Black, color = Color(0xFFE57373))
+                        } else {
+                            Text(
+                                text = String.format(Locale.US, "%.1f m", gpsAccuracyMeters),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF66BB6A)
+                            )
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Actual Real OpenStreetMap Live Tracker with Polyline and Custom Overlays
-            OSMMapView(
-                points = trackpoints,
-                isLiveTracking = isRecording,
-                selectedSimulationRoute = selectedSimulationRoute,
+            // 4. BOTTOM ACTIONS (PAUSE & FINISH)
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(SlateCardSurface)
-                    .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp))
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Action row buttons (Play/Pause, Finish, Discard)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
+                    .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (isRecording) {
@@ -5182,7 +5147,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     onClick = { showFinishDialog = true },
                     colors = ButtonDefaults.buttonColors(containerColor = OrangePrimary),
                     modifier = Modifier
-                        .weight(1.2f)
+                        .weight(1f)
                         .height(50.dp)
                         .testTag("finish_recording_button"),
                     shape = RoundedCornerShape(25.dp)
@@ -5190,7 +5155,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Check, contentDescription = "Finish", tint = Color.White)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("FINISH WORKOUT", color = Color.White, fontWeight = FontWeight.Black)
+                        Text("FINISH", color = Color.White, fontWeight = FontWeight.Black)
                     }
                 }
             }
@@ -6950,6 +6915,22 @@ fun OSMMapView(
     selectedSimulationRoute: String?,
     modifier: Modifier = Modifier
 ) {
+    SummitOutdoorMapView(
+        points = points,
+        isLiveTracking = isLiveTracking,
+        sportType = "hike",
+        modifier = modifier
+    )
+}
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun OldOSMMapView(
+    points: List<com.example.data.GPSPoint>,
+    isLiveTracking: Boolean,
+    selectedSimulationRoute: String?,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     var autoFollow by remember { mutableStateOf(true) }
     val currentMapView = remember { mutableStateOf<MapView?>(null) }
@@ -7666,6 +7647,19 @@ fun InteractiveCanvasChart(
 
 @Composable
 fun PremiumOSMMapView(
+    points: List<com.example.data.GPSPoint>,
+    modifier: Modifier = Modifier
+) {
+    SummitOutdoorMapView(
+        points = points,
+        isLiveTracking = false,
+        sportType = "hike",
+        modifier = modifier
+    )
+}
+
+@Composable
+fun OldPremiumOSMMapView(
     points: List<com.example.data.GPSPoint>,
     modifier: Modifier = Modifier
 ) {

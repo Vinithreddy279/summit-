@@ -259,7 +259,6 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val target = activeTarget.value
             val impact = _transientActivityReadinessImpact.value
-            val stepEntity = _transientStep.value
 
             // 1. Ensure BASELINE exists if not already present
             if (target != null && impact != null) {
@@ -270,7 +269,7 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
                     enduranceScore = impact.enduranceBefore,
                     recentLoadScore = impact.recentLoadBefore,
                     mainLimiter = impact.mainLimiterBefore,
-                    readinessLevel = if (impact.overallBefore >= 90) ReadinessLevel.READY else ReadinessLevel.BUILDING,
+                    readinessLevel = impact.readinessLevelBefore,
                     evidence = ReadinessEvidence(0.0, 0.0, 0.0, null, 0.0, 0.0, 0, 0.0, 0.0, 0, 0, 0, emptyList(), 0)
                 )
                 repository.ensureBaselineSnapshot(target.id, beforeReadiness, recordedAt = System.currentTimeMillis() - 5000)
@@ -279,48 +278,30 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
             // 2. Perform the database step completion transaction
             repository.completeStepTransaction(planId, stepId, activityId)
 
-            // 3. Save ACTIVITY_IMPACT snapshot after step is completed
-            if (target != null && impact != null && stepEntity != null) {
-                val existingSnapshot = repository.findSnapshotForActivity(target.id, activityId)
-                if (existingSnapshot == null) {
-                    val afterSnapshot = ReadinessHistoryEntity(
-                        targetHikeId = target.id,
-                        activityId = activityId,
-                        progressionPlanId = planId,
-                        progressionStepId = stepId,
-                        overallScore = impact.overallAfter,
-                        distanceScore = impact.distanceAfter,
-                        elevationScore = impact.elevationAfter,
-                        enduranceScore = impact.enduranceAfter,
-                        recentLoadScore = impact.recentLoadAfter,
-                        mainLimiter = impact.mainLimiterAfter.name,
-                        readinessLevel = if (impact.overallAfter >= 90) ReadinessLevel.READY.name else ReadinessLevel.BUILDING.name,
-                        recordedAt = System.currentTimeMillis(),
-                        reason = "ACTIVITY_IMPACT"
-                    )
-                    repository.insertReadinessSnapshot(afterSnapshot)
-                }
-
-                // 4. Check if final step completion completed the target hike (TARGET_COMPLETED snapshot)
+            // 3. Check if final step completion completed the target hike (TARGET_COMPLETED snapshot)
+            if (target != null && impact != null) {
                 val updatedSteps = repository.getStepsForPlan(planId)
                 val allCompleted = updatedSteps.all { it.status == "COMPLETED" }
                 if (allCompleted) {
-                    val finalSnapshot = ReadinessHistoryEntity(
-                        targetHikeId = target.id,
-                        activityId = null,
-                        progressionPlanId = planId,
-                        progressionStepId = null,
-                        overallScore = impact.overallAfter,
-                        distanceScore = impact.distanceAfter,
-                        elevationScore = impact.elevationAfter,
-                        enduranceScore = impact.enduranceAfter,
-                        recentLoadScore = impact.recentLoadAfter,
-                        mainLimiter = impact.mainLimiterAfter.name,
-                        readinessLevel = ReadinessLevel.READY.name,
-                        recordedAt = System.currentTimeMillis() + 1000,
-                        reason = "TARGET_COMPLETED"
-                    )
-                    repository.insertReadinessSnapshot(finalSnapshot)
+                    val existingTargetCompleted = repository.findTargetCompletedSnapshot(target.id)
+                    if (existingTargetCompleted == null) {
+                        val finalSnapshot = ReadinessHistoryEntity(
+                            targetHikeId = target.id,
+                            activityId = null,
+                            progressionPlanId = planId,
+                            progressionStepId = null,
+                            overallScore = impact.overallAfter,
+                            distanceScore = impact.distanceAfter,
+                            elevationScore = impact.elevationAfter,
+                            enduranceScore = impact.enduranceAfter,
+                            recentLoadScore = impact.recentLoadAfter,
+                            mainLimiter = impact.mainLimiterAfter.name,
+                            readinessLevel = impact.readinessLevelAfter.name,
+                            recordedAt = System.currentTimeMillis(),
+                            reason = "TARGET_COMPLETED"
+                        )
+                        repository.insertReadinessSnapshot(finalSnapshot)
+                    }
                 }
             }
 
@@ -1127,37 +1108,56 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
 
             simulateSocialInteractionsForActivity(activityId, activity.title)
 
-            if (stepId != null && planId != null && target != null && beforeReadiness != null) {
-                val stepsList = repository.getStepsForPlan(planId)
-                val stepEntity = stepsList.find { it.id == stepId }
-                if (stepEntity != null) {
-                    val updatedActivities = listOf(savedActivity) + activities.value.filter { it.id != savedActivity.id }
-                    val afterReadiness = ReadinessEngine.calculate(target, updatedActivities, System.currentTimeMillis())
+            if (target != null && beforeReadiness != null) {
+                // Ensure baseline exists
+                repository.ensureBaselineSnapshot(target.id, beforeReadiness, recordedAt = System.currentTimeMillis() - 5000)
 
-                    val impact = ActivityReadinessImpact(
+                val updatedActivities = listOf(savedActivity) + activities.value.filter { it.id != savedActivity.id }
+                val afterReadiness = ReadinessEngine.calculate(target, updatedActivities, System.currentTimeMillis())
+
+                val impact = ActivityImpactCalculator.calculateImpact(
+                    activityId = activityId,
+                    progressionStepId = stepId,
+                    target = target,
+                    beforeReadiness = beforeReadiness,
+                    afterReadiness = afterReadiness
+                )
+
+                // Centralized ACTIVITY_IMPACT snapshot persistence
+                val existingSnapshot = repository.findSnapshotForActivity(target.id, activityId)
+                if (existingSnapshot == null) {
+                    val afterSnapshot = ReadinessHistoryEntity(
+                        targetHikeId = target.id,
                         activityId = activityId,
+                        progressionPlanId = planId,
                         progressionStepId = stepId,
-                        overallBefore = beforeReadiness.overallScore,
-                        overallAfter = afterReadiness.overallScore,
-                        distanceBefore = beforeReadiness.distanceScore,
-                        distanceAfter = afterReadiness.distanceScore,
-                        elevationBefore = beforeReadiness.elevationScore,
-                        elevationAfter = afterReadiness.elevationScore,
-                        enduranceBefore = beforeReadiness.enduranceScore,
-                        enduranceAfter = afterReadiness.enduranceScore,
-                        recentLoadBefore = beforeReadiness.recentLoadScore,
-                        recentLoadAfter = afterReadiness.recentLoadScore,
-                        mainLimiterBefore = beforeReadiness.mainLimiter,
-                        mainLimiterAfter = afterReadiness.mainLimiter
+                        overallScore = impact.overallAfter,
+                        distanceScore = impact.distanceAfter,
+                        elevationScore = impact.elevationAfter,
+                        enduranceScore = impact.enduranceAfter,
+                        recentLoadScore = impact.recentLoadAfter,
+                        mainLimiter = impact.mainLimiterAfter.name,
+                        readinessLevel = impact.readinessLevelAfter.name,
+                        recordedAt = System.currentTimeMillis(),
+                        reason = "ACTIVITY_IMPACT"
                     )
+                    repository.insertReadinessSnapshot(afterSnapshot)
+                }
 
-                    val matchResult = ProgressionStepMatcher.match(stepEntity, savedActivity)
+                if (stepId != null && planId != null) {
+                    val stepsList = repository.getStepsForPlan(planId)
+                    val stepEntity = stepsList.find { it.id == stepId }
+                    if (stepEntity != null) {
+                        val matchResult = ProgressionStepMatcher.match(stepEntity, savedActivity)
 
-                    _transientActivityReadinessImpact.value = impact
-                    _transientMatchResult.value = matchResult
-                    _transientCompletedActivity.value = savedActivity
-                    _transientStep.value = stepEntity
-                    _showImpactReviewScreen.value = true
+                        _transientActivityReadinessImpact.value = impact
+                        _transientMatchResult.value = matchResult
+                        _transientCompletedActivity.value = savedActivity
+                        _transientStep.value = stepEntity
+                        _showImpactReviewScreen.value = true
+                    } else {
+                        _currentTab.value = Tab.SOCIAL_FEED
+                    }
                 } else {
                     _currentTab.value = Tab.SOCIAL_FEED
                 }

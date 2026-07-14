@@ -1268,14 +1268,7 @@ private fun ReadinessDimensionRow(
 }
 
 fun getReadinessLevelForScore(score: Int): ReadinessLevel {
-    return when (score) {
-        in 0..39 -> ReadinessLevel.NOT_READY
-        in 40..59 -> ReadinessLevel.BUILDING
-        in 60..74 -> ReadinessLevel.MODERATE
-        in 75..89 -> ReadinessLevel.READY
-        in 90..100 -> ReadinessLevel.HIGHLY_READY
-        else -> ReadinessLevel.NOT_READY
-    }
+    return com.example.data.ReadinessEngine.getLevelForScore(score)
 }
 
 fun getReadinessColor(level: ReadinessLevel): Color {
@@ -2307,11 +2300,7 @@ fun ReadinessHistoryChart(history: List<ReadinessHistoryEntity>) {
                         // Draw point circles
                         sortedHistory.forEachIndexed { idx, entity ->
                             val coord = screenCoordinates[idx]
-                            val color = when {
-                                entity.overallScore >= 90 -> Color(0xFF10B981)
-                                entity.overallScore >= 70 -> OrangePrimary
-                                else -> Color(0xFFEF4444)
-                            }
+                            val color = getScoreColor(entity.overallScore)
                             
                             drawCircle(
                                 color = color,
@@ -2363,13 +2352,7 @@ fun ReadinessHistoryChart(history: List<ReadinessHistoryEntity>) {
                                     modifier = Modifier
                                         .size(8.dp)
                                         .clip(CircleShape)
-                                        .background(
-                                            when {
-                                                entity.overallScore >= 90 -> Color(0xFF10B981)
-                                                entity.overallScore >= 70 -> OrangePrimary
-                                                else -> Color(0xFFEF4444)
-                                            }
-                                        )
+                                        .background(getScoreColor(entity.overallScore))
                                 )
                                 Column {
                                     Text(

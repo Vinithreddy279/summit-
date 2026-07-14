@@ -251,6 +251,9 @@ class SummitRepository(private val db: AppDatabase) {
     suspend fun findSnapshotForActivity(targetHikeId: Long, activityId: Long): ReadinessHistoryEntity? =
         readinessHistoryDao.findSnapshotForActivity(targetHikeId, activityId)
 
+    suspend fun findTargetCompletedSnapshot(targetHikeId: Long): ReadinessHistoryEntity? =
+        readinessHistoryDao.findTargetCompletedSnapshot(targetHikeId)
+
     suspend fun ensureBaselineSnapshot(targetHikeId: Long, readiness: ReadinessResult, recordedAt: Long = System.currentTimeMillis()) {
         val existing = getReadinessHistoryForTarget(targetHikeId)
         if (existing.isEmpty()) {

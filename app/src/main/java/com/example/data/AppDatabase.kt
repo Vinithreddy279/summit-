@@ -283,13 +283,13 @@ interface ProgressionDao {
 
 @Dao
 interface ReadinessHistoryDao {
-    @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId ORDER BY recordedAt ASC")
+    @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId ORDER BY recordedAt ASC, id ASC")
     fun observeReadinessHistoryForTarget(targetHikeId: Long): Flow<List<ReadinessHistoryEntity>>
 
-    @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId ORDER BY recordedAt ASC")
+    @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId ORDER BY recordedAt ASC, id ASC")
     suspend fun getReadinessHistoryForTarget(targetHikeId: Long): List<ReadinessHistoryEntity>
 
-    @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId ORDER BY recordedAt DESC LIMIT 1")
+    @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId ORDER BY recordedAt DESC, id DESC LIMIT 1")
     suspend fun getLatestReadinessSnapshotForTarget(targetHikeId: Long): ReadinessHistoryEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -297,6 +297,9 @@ interface ReadinessHistoryDao {
 
     @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId AND activityId = :activityId LIMIT 1")
     suspend fun findSnapshotForActivity(targetHikeId: Long, activityId: Long): ReadinessHistoryEntity?
+
+    @Query("SELECT * FROM readiness_history WHERE targetHikeId = :targetHikeId AND reason = 'TARGET_COMPLETED' LIMIT 1")
+    suspend fun findTargetCompletedSnapshot(targetHikeId: Long): ReadinessHistoryEntity?
 }
 
 @Database(

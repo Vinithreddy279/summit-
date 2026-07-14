@@ -345,11 +345,15 @@ class TrackingService : Service() {
                     val accuracy = location.accuracy
                     gpsAccuracyMeters.value = accuracy.toDouble()
                     
-                    // 1. High-accuracy GPS filtering: ignore points with poor accuracy (> 20 meters)
-                    if (accuracy > 20f) return
+                    // Use the accuracy-aware GpsFilter to accept or reject the point
+                    val accepted = com.example.data.GpsFilter.shouldAcceptLocation(location, lastLocation)
+                    if (!accepted) {
+                        // If stationary/rejected, current speed goes to 0
+                        currentSpeedKmh.value = 0.0
+                        return
+                    }
                     
                     val speedMps = location.speed
-                    val speedKmhValue = speedMps * 3.6
                     
                     // Check if movement resumed to auto-resume
                     if (isAutoPaused.value) {
@@ -364,27 +368,10 @@ class TrackingService : Service() {
                         }
                     }
                     
-                    // 2. Ignore duplicate points and GPS jumps
                     val lastLoc = lastLocation
                     if (lastLoc != null) {
                         val distanceDeltaM = location.distanceTo(lastLoc)
-                        val timeDeltaSec = (location.time - lastLoc.time) / 1000.0
-                        
-                        // Ignore exact duplicates or tiny GPS drift while standing still (< 1.2m)
-                        if (distanceDeltaM < 1.2) {
-                            return
-                        }
-                        
-                        // Ignore massive GPS jumps (speed of jump > 35 m/s = 126 km/h) with moderate/high accuracy
-                        if (timeDeltaSec > 0.0) {
-                            val calculatedSpeed = distanceDeltaM / timeDeltaSec
-                            if (calculatedSpeed > 35.0 && accuracy > 12f) {
-                                // Clear jump, ignore this location
-                                return
-                            }
-                        }
-                        
-                        // 3. Increment distance
+                        // Increment distance based on accepted location stream
                         distanceKm.value += (distanceDeltaM / 1000.0)
                     }
                     
@@ -721,6 +708,11 @@ class TrackingService : Service() {
     }
 
     private fun updateNotification() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                return
+            }
+        }
         val distText = String.format("%.2f km", distanceKm.value)
         val durationText = formatDuration(durationSeconds.value)
         val text = "Distance: $distText • Time: $durationText"

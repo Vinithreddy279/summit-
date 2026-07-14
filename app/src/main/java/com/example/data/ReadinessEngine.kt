@@ -98,14 +98,7 @@ object ReadinessEngine {
         }
 
         // Step 7: Map to Readiness Level
-        val readinessLevel = when (overallScore) {
-            in 0..39 -> ReadinessLevel.NOT_READY
-            in 40..59 -> ReadinessLevel.BUILDING
-            in 60..74 -> ReadinessLevel.MODERATE
-            in 75..89 -> ReadinessLevel.READY
-            in 90..100 -> ReadinessLevel.HIGHLY_READY
-            else -> ReadinessLevel.NOT_READY
-        }
+        val readinessLevel = getLevelForScore(overallScore)
 
         // Step 8: Main Limiter Selection with Tie-Break Priority
         val priorityList = listOfNotNull(
@@ -151,5 +144,16 @@ object ReadinessEngine {
             readinessLevel = readinessLevel,
             evidence = evidence
         )
+    }
+
+    fun getLevelForScore(score: Int): ReadinessLevel {
+        return when (score) {
+            in 0..39 -> ReadinessLevel.NOT_READY
+            in 40..59 -> ReadinessLevel.BUILDING
+            in 60..74 -> ReadinessLevel.MODERATE
+            in 75..89 -> ReadinessLevel.READY
+            in 90..100 -> ReadinessLevel.HIGHLY_READY
+            else -> ReadinessLevel.NOT_READY
+        }
     }
 }
