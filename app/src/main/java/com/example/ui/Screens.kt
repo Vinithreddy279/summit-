@@ -4468,8 +4468,8 @@ fun CompactFeedPostCard(post: FeedPost, onKudosClick: () -> Unit, onCommentClick
 @Composable
 fun RecordScreen(viewModel: SummitViewModel) {
     val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
-    val isPaused by TrackingService.isPaused.collectAsStateWithLifecycle()
-    val isAutoPaused by TrackingService.isAutoPaused.collectAsStateWithLifecycle()
+    val isPaused by viewModel.isPaused.collectAsStateWithLifecycle()
+    val isAutoPaused by viewModel.isAutoPaused.collectAsStateWithLifecycle()
     val durationSeconds by viewModel.recordingDurationSeconds.collectAsStateWithLifecycle()
     val distanceKm by viewModel.recordingDistanceKm.collectAsStateWithLifecycle()
     val sportType by viewModel.recordingSportType.collectAsStateWithLifecycle()
@@ -4987,14 +4987,14 @@ fun RecordScreen(viewModel: SummitViewModel) {
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(if (isRecording) Color.Red else Color.Gray)
+                            .background(if (isRecording && !isPaused && !isAutoPaused) Color.Red else Color.Gray)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isRecording) "RECORDING LIVE" else "PAUSED",
+                        text = if (isRecording && !isPaused && !isAutoPaused) "RECORDING LIVE" else if (isAutoPaused) "AUTO-PAUSED" else "PAUSED",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Black,
-                        color = if (isRecording) Color.Red else Color.Gray
+                        color = if (isRecording && !isPaused && !isAutoPaused) Color.Red else Color.Gray
                     )
                 }
                 
@@ -5111,8 +5111,6 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                val isRecording by viewModel.isRecording.collectAsState()
-                val isPaused by viewModel.isPaused.collectAsState()
                 if (isRecording) {
                     Button(
                         onClick = { 
@@ -7664,13 +7662,18 @@ fun InteractiveCanvasChart(
 @Composable
 fun PremiumOSMMapView(
     points: List<com.example.data.GPSPoint>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    sportType: String = "hike",
+    viewMode: MapViewMode = MapViewMode.OUTDOOR,
+    onViewModeChange: ((MapViewMode) -> Unit)? = null
 ) {
     SummitOutdoorMapView(
         points = points,
         isLiveTracking = false,
-        sportType = "hike",
-        modifier = modifier
+        sportType = sportType,
+        modifier = modifier,
+        viewMode = viewMode,
+        onViewModeChange = onViewModeChange
     )
 }
 
@@ -7990,6 +7993,7 @@ fun ActivityDetailDialog(
     var editTitle by remember(activity.id) { mutableStateOf(activity.title) }
     var editNotes by remember(activity.id) { mutableStateOf(activity.notes) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
+    var mapStyleMode by remember { mutableStateOf(MapViewMode.OUTDOOR) }
 
     val estCalories = remember(activity.distanceKm, activity.sportType, activity.durationSeconds) {
         when (activity.sportType.lowercase()) {
@@ -8298,6 +8302,9 @@ fun ActivityDetailDialog(
                     Text("ROUTE MAP", fontSize = 11.sp, fontWeight = FontWeight.Black, color = SlateTextSecondary, letterSpacing = 1.sp)
                     PremiumOSMMapView(
                         points = points,
+                        sportType = activity.sportType,
+                        viewMode = mapStyleMode,
+                        onViewModeChange = { mapStyleMode = it },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(300.dp)

@@ -1092,6 +1092,7 @@ fun RouteDetailsDialog(
     val context = LocalContext.current
     var notesText by remember { mutableStateOf(route.notes) }
     var isEditingNotes by remember { mutableStateOf(false) }
+    var mapStyleMode by remember { mutableStateOf(MapViewMode.OUTDOOR) }
 
     val points = remember(route.routePointsJson) {
         JsonHelper.jsonToPoints(route.routePointsJson)
@@ -1167,6 +1168,9 @@ fun RouteDetailsDialog(
                     if (points.isNotEmpty()) {
                         PremiumOSMMapView(
                             points = points,
+                            sportType = route.activityType,
+                            viewMode = mapStyleMode,
+                            onViewModeChange = { mapStyleMode = it },
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {

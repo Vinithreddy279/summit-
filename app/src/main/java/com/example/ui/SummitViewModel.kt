@@ -439,6 +439,12 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     private val _isRecording = MutableStateFlow(false)
     val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
 
+    private val _isPaused = MutableStateFlow(false)
+    val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
+
+    private val _isAutoPaused = MutableStateFlow(false)
+    val isAutoPaused: StateFlow<Boolean> = _isAutoPaused.asStateFlow()
+
     private val _recordingDurationSeconds = MutableStateFlow(0L)
     val recordingDurationSeconds: StateFlow<Long> = _recordingDurationSeconds.asStateFlow()
 
@@ -544,6 +550,16 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             TrackingService.isRecording.collect {
                 _isRecording.value = it
+            }
+        }
+        viewModelScope.launch {
+            TrackingService.isPaused.collect {
+                _isPaused.value = it
+            }
+        }
+        viewModelScope.launch {
+            TrackingService.isAutoPaused.collect {
+                _isAutoPaused.value = it
             }
         }
         viewModelScope.launch {
@@ -1037,6 +1053,10 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun stopRecording() {
+        TrackingService.pauseTracking(getApplication())
+    }
+
+    fun pauseRecording() {
         TrackingService.pauseTracking(getApplication())
     }
 

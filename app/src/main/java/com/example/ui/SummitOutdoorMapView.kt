@@ -20,6 +20,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Satellite
+import androidx.compose.material.icons.filled.Terrain
+import com.example.ui.theme.SlateCardSurface
+import com.example.ui.theme.SlateCardSurfaceVariant
+import com.example.ui.theme.SlateTextPrimary
+import com.example.ui.theme.SlateTextSecondary
+import com.example.ui.theme.OrangePrimary
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -43,6 +53,7 @@ import com.mapbox.mapboxsdk.annotations.IconFactory
 import com.mapbox.android.gestures.MoveGestureDetector
 import com.mapbox.mapboxsdk.style.layers.LineLayer
 import com.mapbox.mapboxsdk.style.layers.SymbolLayer
+import com.mapbox.mapboxsdk.style.layers.Property
 import com.mapbox.mapboxsdk.style.layers.PropertyFactory
 import com.mapbox.mapboxsdk.style.expressions.Expression
 import com.mapbox.mapboxsdk.style.expressions.Expression.*
@@ -53,6 +64,12 @@ enum class OutdoorMapMode {
     RUN,
     WALK,
     CYCLE
+}
+
+enum class MapViewMode {
+    OUTDOOR,
+    SATELLITE,
+    TERRAIN_3D
 }
 
 enum class MapFollowMode {
@@ -368,10 +385,23 @@ fun SummitOutdoorMapView(
     isLiveTracking: Boolean,
     sportType: String,
     modifier: Modifier = Modifier,
+    viewMode: MapViewMode = MapViewMode.OUTDOOR,
+    onViewModeChange: ((MapViewMode) -> Unit)? = null,
     stateManager: OutdoorMapStateManager = remember { OutdoorMapStateManager() }
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Maintain local state for the map view mode if none is provided (backwards compatibility)
+    var localViewMode by remember { mutableStateOf(MapViewMode.OUTDOOR) }
+    val activeViewMode = if (onViewModeChange != null) viewMode else localViewMode
+    val activeOnViewModeChange: (MapViewMode) -> Unit = { mode ->
+        if (onViewModeChange != null) {
+            onViewModeChange(mode)
+        } else {
+            localViewMode = mode
+        }
+    }
 
     LaunchedEffect(sportType) {
         stateManager.setMapMode(mapSportToOutdoorMapMode(sportType))
@@ -379,10 +409,17 @@ fun SummitOutdoorMapView(
 
     val maptilerKey = BuildConfig.MAPTILER_API_KEY
     val isPlaceholderKey = maptilerKey.isNullOrEmpty() || maptilerKey == "placeholder_maptiler_key"
-    val styleUrl = if (isPlaceholderKey) {
-        "https://demotiles.maplibre.org/style.json"
-    } else {
-        "https://api.maptiler.com/maps/outdoor-v2/style.json?key=$maptilerKey"
+    
+    val styleUrl = remember(activeViewMode, maptilerKey) {
+        if (isPlaceholderKey) {
+            "https://demotiles.maplibre.org/style.json"
+        } else {
+            when (activeViewMode) {
+                MapViewMode.OUTDOOR -> "https://api.maptiler.com/maps/outdoor-v2/style.json?key=$maptilerKey"
+                MapViewMode.SATELLITE -> "https://api.maptiler.com/maps/hybrid/style.json?key=$maptilerKey"
+                MapViewMode.TERRAIN_3D -> "https://api.maptiler.com/maps/outdoor-v2/style.json?key=$maptilerKey"
+            }
+        }
     }
 
     // Diagnostic logging with redacted key
@@ -393,9 +430,6 @@ fun SummitOutdoorMapView(
 
     remember {
         Mapbox.getInstance(context)
-        // User-Agent Override Limitation: MapLibre 10.0.2 does not expose a public or stable
-        // HttpRequestUtil class in the com.mapbox.mapboxsdk package or subpackages to configure
-        // custom headers or user agent strings globally.
         android.util.Log.d("SummitOutdoorMap", "Mapbox SDK initialized. Global User-Agent override is not supported in MapLibre 10.0.2.")
         true
     }
@@ -414,7 +448,7 @@ fun SummitOutdoorMapView(
             applyStyleForMode(style, stateManager.mode)
         }
     }
-    var activePolyline by remember { mutableStateOf<Polyline?>(null) }
+    
     var startMarker by remember { mutableStateOf<Marker?>(null) }
     var locationMarker by remember { mutableStateOf<Marker?>(null) }
 
@@ -456,6 +490,23 @@ fun SummitOutdoorMapView(
         IconFactory.getInstance(context).fromBitmap(bitmap)
     }
 
+    val comboIcon = remember(context) {
+        val size = 48
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        // Outer loop finish halo (pink)
+        paint.color = 0x40E91E63.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 16f, paint)
+        // Middle finish ring (pink)
+        paint.color = 0xFFE91E63.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 12f, paint)
+        // Inner start circle (green)
+        paint.color = 0xFF4CAF50.toInt()
+        canvas.drawCircle(size / 2f, size / 2f, 7f, paint)
+        IconFactory.getInstance(context).fromBitmap(bitmap)
+    }
+
     DisposableEffect(lifecycleOwner, mapView) {
         val observer = LifecycleEventObserver { _, event ->
             if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
@@ -485,114 +536,6 @@ fun SummitOutdoorMapView(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(androidx.compose.ui.graphics.Color(0xFF0F172A)) // SlateDarkBackground hex equivalent
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF1E293B)), // SlateCardSurface hex equivalent
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .border(1.dp, androidx.compose.ui.graphics.Color(0xFFEF4444), RoundedCornerShape(16.dp))
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(20.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Surface(
-                                    color = androidx.compose.ui.graphics.Color(0xFFEF4444).copy(alpha = 0.15f),
-                                    shape = CircleShape,
-                                    modifier = Modifier.size(56.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "⚠️",
-                                            fontSize = 28.sp
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Text(
-                                    text = "OUTDOOR MAP CONFIGURE ERROR",
-                                    color = androidx.compose.ui.graphics.Color(0xFFEF4444),
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 15.sp,
-                                    letterSpacing = 1.sp
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                Text(
-                                    text = "MAPTILER_API_KEY configured: FALSE",
-                                    color = androidx.compose.ui.graphics.Color(0xFF94A3B8),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-
-                                Spacer(modifier = Modifier.height(14.dp))
-
-                                Text(
-                                    text = "A valid MapTiler API Key is required to render high-quality outdoor vector terrain maps.",
-                                    color = androidx.compose.ui.graphics.Color(0xFFE2E8F0),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                    lineHeight = 18.sp
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                HorizontalDivider(color = androidx.compose.ui.graphics.Color(0xFF334155), thickness = 1.dp)
-
-                                Spacer(modifier = Modifier.height(14.dp))
-
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Text(
-                                        text = "How to activate:",
-                                        color = androidx.compose.ui.graphics.Color(0xFFF1F5F9),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "1. Get a free API key from maptiler.com",
-                                        color = androidx.compose.ui.graphics.Color(0xFF94A3B8),
-                                        fontSize = 11.sp
-                                    )
-                                    Text(
-                                        text = "2. Open the Secrets panel in AI Studio UI",
-                                        color = androidx.compose.ui.graphics.Color(0xFF94A3B8),
-                                        fontSize = 11.sp
-                                    )
-                                    Text(
-                                        text = "3. Set MAPTILER_API_KEY value to your API key",
-                                        color = androidx.compose.ui.graphics.Color(0xFF94A3B8),
-                                        fontSize = 11.sp
-                                    )
-                                    Text(
-                                        text = "4. Re-compile the application",
-                                        color = androidx.compose.ui.graphics.Color(0xFF94A3B8),
-                                        fontSize = 11.sp
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    MapUnavailableView(message = "Outdoor map is temporarily unavailable.")
-                }
-            }
-            MapLoadState.STYLE_LOAD_FAILED -> {
-                if (BuildConfig.DEBUG) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
                             .background(androidx.compose.ui.graphics.Color(0xFF0F172A))
                             .padding(16.dp),
                         verticalArrangement = Arrangement.Center,
@@ -603,29 +546,15 @@ fun SummitOutdoorMapView(
                             shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .border(1.dp, androidx.compose.ui.graphics.Color(0xFFEF4444), RoundedCornerShape(16.dp))
+                                .border(1.dp, androidx.compose.ui.graphics.Color(0xFF334155), RoundedCornerShape(16.dp))
+                                .padding(16.dp)
                         ) {
                             Column(
-                                modifier = Modifier.padding(20.dp),
+                                modifier = Modifier.padding(16.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Surface(
-                                    color = androidx.compose.ui.graphics.Color(0xFFEF4444).copy(alpha = 0.15f),
-                                    shape = CircleShape,
-                                    modifier = Modifier.size(56.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "❌",
-                                            fontSize = 28.sp
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
                                 Text(
-                                    text = "MAP STYLE LOAD FAILED",
+                                    text = "⚠️ MAPTILER KEY MISSING",
                                     color = androidx.compose.ui.graphics.Color(0xFFEF4444),
                                     fontWeight = FontWeight.Black,
                                     fontSize = 15.sp,
@@ -653,6 +582,12 @@ fun SummitOutdoorMapView(
                 MapUnavailableView(
                     message = "Network unavailable. Please check your connection.",
                     icon = "📶"
+                )
+            }
+            MapLoadState.STYLE_LOAD_FAILED -> {
+                MapUnavailableView(
+                    message = "Failed to load the map style. Please check your MapTiler configuration.",
+                    icon = "🗺️"
                 )
             }
             MapLoadState.LOADING, MapLoadState.READY -> {
@@ -684,7 +619,7 @@ fun SummitOutdoorMapView(
                                 })
 
                                 map.setStyle(styleUrl) { style ->
-                                    applyStyleForMode(style, stateManager.mode)
+                                    updateRouteAndLayers(map, style, points, isLiveTracking, activeViewMode, sportType)
                                     mapLoadState = MapLoadState.READY
                                 }
                             }
@@ -694,52 +629,100 @@ fun SummitOutdoorMapView(
                         val map = maplibreMapState ?: return@AndroidView
                         val safePoints = points.toList()
 
+                        // Style loading logic
+                        val currentStyle = map.style
+                        if (currentStyle == null || currentStyle.url != styleUrl) {
+                            map.setStyle(styleUrl) { loadedStyle ->
+                                updateRouteAndLayers(map, loadedStyle, safePoints, isLiveTracking, activeViewMode, sportType)
+                                if (activeViewMode == MapViewMode.TERRAIN_3D) {
+                                    val currentCamera = map.cameraPosition
+                                    val newCamera = CameraPosition.Builder(currentCamera)
+                                        .tilt(55.0)
+                                        .build()
+                                    map.animateCamera(CameraUpdateFactory.newCameraPosition(newCamera), 800)
+                                } else {
+                                    val currentCamera = map.cameraPosition
+                                    if (currentCamera.tilt > 0.0) {
+                                        val newCamera = CameraPosition.Builder(currentCamera)
+                                            .tilt(0.0)
+                                            .build()
+                                        map.animateCamera(CameraUpdateFactory.newCameraPosition(newCamera), 800)
+                                    }
+                                }
+                            }
+                        } else {
+                            updateRouteAndLayers(map, currentStyle, safePoints, isLiveTracking, activeViewMode, sportType)
+                        }
+
+                        // Drawing markers and updating camera
                         if (safePoints.isNotEmpty()) {
                             val mapPoints = safePoints.map { LatLng(it.lat, it.lng) }
-                            
-                            activePolyline?.let { map.removePolyline(it) }
-                            activePolyline = map.addPolyline(
-                                PolylineOptions()
-                                    .addAll(mapPoints)
-                                    .color(android.graphics.Color.parseColor("#FF5722"))
-                                    .width(5f)
-                            )
-
                             val firstPt = mapPoints.first()
-                            startMarker?.let { map.removeMarker(it) }
-                            startMarker = map.addMarker(
-                                MarkerOptions()
-                                    .position(firstPt)
-                                    .icon(startIcon)
-                                    .title("Start Point")
-                            )
-
                             val lastPt = mapPoints.last()
-                            locationMarker?.let { map.removeMarker(it) }
-                            locationMarker = map.addMarker(
-                                MarkerOptions()
-                                    .position(lastPt)
-                                    .icon(if (isLiveTracking) locationIcon else finishIcon)
-                                    .title(if (isLiveTracking) "My Location" else "Finish Point")
-                            )
+                            
+                            val hasMovement = safePoints.size >= 2 && hasMeaningfulMovement(safePoints)
+                            val isLoop = hasMovement && distanceBetween(firstPt, lastPt) < 25.0
 
+                            if (isLoop && !isLiveTracking) {
+                                startMarker?.let { map.removeMarker(it) }
+                                startMarker = map.addMarker(
+                                    MarkerOptions()
+                                        .position(firstPt)
+                                        .icon(comboIcon)
+                                        .title("Start & Finish")
+                                )
+                                locationMarker?.let { map.removeMarker(it) }
+                                locationMarker = null
+                            } else {
+                                if (hasMovement) {
+                                    startMarker?.let { map.removeMarker(it) }
+                                    startMarker = map.addMarker(
+                                        MarkerOptions()
+                                            .position(firstPt)
+                                            .icon(startIcon)
+                                            .title("Start Point")
+                                    )
+
+                                    locationMarker?.let { map.removeMarker(it) }
+                                    locationMarker = map.addMarker(
+                                        MarkerOptions()
+                                            .position(lastPt)
+                                            .icon(if (isLiveTracking) locationIcon else finishIcon)
+                                            .title(if (isLiveTracking) "My Location" else "Finish Point")
+                                    )
+                                } else {
+                                    startMarker?.let { map.removeMarker(it) }
+                                    startMarker = null
+                                    locationMarker?.let { map.removeMarker(it) }
+                                    locationMarker = map.addMarker(
+                                        MarkerOptions()
+                                            .position(lastPt)
+                                            .icon(if (isLiveTracking) locationIcon else finishIcon)
+                                            .title(if (isLiveTracking) "My Location" else "Finish Point")
+                                    )
+                                }
+                            }
+
+                            // Camera Updates
                             if (isLiveTracking) {
                                 if (stateManager.followMode == MapFollowMode.FOLLOWING) {
+                                    val currentCamera = map.cameraPosition
                                     val cameraPosition = CameraPosition.Builder()
                                         .target(lastPt)
                                         .zoom(15.5)
+                                        .tilt(if (activeViewMode == MapViewMode.TERRAIN_3D) 55.0 else currentCamera.tilt)
                                         .build()
                                     map.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 1000)
                                 }
                             } else {
-                                if (safePoints.size >= 2) {
+                                if (hasMovement) {
                                     try {
                                         val boundsBuilder = LatLngBounds.Builder()
                                         mapPoints.forEach { boundsBuilder.include(it) }
-                                        map.animateCamera(
-                                            CameraUpdateFactory.newLatLngBounds(boundsBuilder.build(), 60),
-                                            1000
-                                        )
+                                        val bounds = boundsBuilder.build()
+                                        // Padding to ensure route is not cropped or hidden by cards
+                                        val cameraUpdate = CameraUpdateFactory.newLatLngBounds(bounds, 80)
+                                        map.animateCamera(cameraUpdate, 1000)
                                     } catch (e: Exception) {
                                         map.animateCamera(CameraUpdateFactory.newLatLngZoom(lastPt, 15.0), 1000)
                                     }
@@ -789,7 +772,7 @@ fun SummitOutdoorMapView(
                                 text = "MAPTILER_API_KEY configured: TRUE",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = androidx.compose.ui.graphics.Color(0xFF10B981) // Emerald Green
+                                color = androidx.compose.ui.graphics.Color(0xFF10B981)
                             )
                             Text(
                                 text = "Style: MapTiler Outdoor Vector",
@@ -832,7 +815,227 @@ fun SummitOutdoorMapView(
                         )
                     }
                 }
+
+                // Compact view mode selector on map overlay
+                var showSelector by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(12.dp)
+                ) {
+                    FloatingActionButton(
+                        onClick = { showSelector = !showSelector },
+                        containerColor = SlateCardSurface.copy(alpha = 0.9f),
+                        contentColor = SlateTextPrimary,
+                        modifier = Modifier
+                            .size(42.dp)
+                            .testTag("map_layers_button"),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Layers,
+                            contentDescription = "Map Style Layers",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    if (showSelector) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateCardSurface),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .padding(top = 48.dp)
+                                .width(130.dp)
+                                .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(12.dp))
+                                .testTag("map_layers_selector_card")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                MapViewMode.values().forEach { mode ->
+                                    val isSelected = activeViewMode == mode
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) OrangePrimary.copy(alpha = 0.15f) else androidx.compose.ui.graphics.Color.Transparent)
+                                            .clickable {
+                                                activeOnViewModeChange(mode)
+                                                showSelector = false
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 8.dp)
+                                            .testTag("map_layer_option_${mode.name.lowercase()}"),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = when (mode) {
+                                                MapViewMode.OUTDOOR -> Icons.Default.Terrain
+                                                MapViewMode.SATELLITE -> Icons.Default.Satellite
+                                                MapViewMode.TERRAIN_3D -> Icons.Default.Terrain
+                                            },
+                                            contentDescription = mode.name,
+                                            tint = if (isSelected) OrangePrimary else SlateTextSecondary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = when (mode) {
+                                                MapViewMode.OUTDOOR -> "Outdoor"
+                                                MapViewMode.SATELLITE -> "Satellite"
+                                                MapViewMode.TERRAIN_3D -> "3D"
+                                            },
+                                            color = if (isSelected) OrangePrimary else SlateTextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+private fun distanceBetween(p1: LatLng, p2: LatLng): Double {
+    val results = FloatArray(1)
+    try {
+        android.location.Location.distanceBetween(p1.latitude, p1.longitude, p2.latitude, p2.longitude, results)
+        return results[0].toDouble()
+    } catch (e: Exception) {
+        val dx = p1.longitude - p2.longitude
+        val dy = p1.latitude - p2.latitude
+        return Math.sqrt(dx * dx + dy * dy) * 111000.0
+    }
+}
+
+private fun hasMeaningfulMovement(points: List<GPSPoint>): Boolean {
+    if (points.size < 2) return false
+    val first = points.first()
+    for (i in 1 until points.size) {
+        val pt = points[i]
+        val results = FloatArray(1)
+        try {
+            android.location.Location.distanceBetween(first.lat, first.lng, pt.lat, pt.lng, results)
+            if (results[0] > 10.0) return true
+        } catch (e: Exception) {
+            val dx = first.lng - pt.lng
+            val dy = first.lat - pt.lat
+            if (Math.sqrt(dx * dx + dy * dy) * 111000.0 > 10.0) return true
+        }
+    }
+    return false
+}
+
+private fun updateRouteAndLayers(
+    map: MapboxMap,
+    style: Style,
+    points: List<GPSPoint>,
+    isLiveTracking: Boolean,
+    viewMode: MapViewMode,
+    sportType: String
+) {
+    try {
+        // Apply map sport mode emphasis
+        applyStyleForMode(style, mapSportToOutdoorMapMode(sportType))
+
+        val safePoints = points.toList()
+        val hasMovement = safePoints.size >= 2 && hasMeaningfulMovement(safePoints)
+        
+        if (hasMovement) {
+            val mapPoints = safePoints.map { LatLng(it.lat, it.lng) }
+            val mapboxPoints = mapPoints.map { com.mapbox.geojson.Point.fromLngLat(it.longitude, it.latitude) }
+            val lineString = com.mapbox.geojson.LineString.fromLngLats(mapboxPoints)
+            val feature = com.mapbox.geojson.Feature.fromGeometry(lineString)
+            val featureCollection = com.mapbox.geojson.FeatureCollection.fromFeature(feature)
+
+            val sourceId = "summit-recorded-route-source"
+            var source = style.getSourceAs<com.mapbox.mapboxsdk.style.sources.GeoJsonSource>(sourceId)
+            if (source == null) {
+                source = com.mapbox.mapboxsdk.style.sources.GeoJsonSource(sourceId, featureCollection)
+                style.addSource(source)
+            } else {
+                source.setGeoJson(featureCollection)
+            }
+
+            // Route casing layer: summit-recorded-route-casing
+            val casingId = "summit-recorded-route-casing"
+            if (style.getLayer(casingId) == null) {
+                val casingLayer = LineLayer(casingId, sourceId)
+                casingLayer.setProperties(
+                    PropertyFactory.lineColor("#1E293B"),
+                    PropertyFactory.lineWidth(7f),
+                    PropertyFactory.lineOpacity(0.85f),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                )
+                style.addLayer(casingLayer)
+            } else {
+                style.getLayer(casingId)?.setProperties(
+                    PropertyFactory.lineColor("#1E293B"),
+                    PropertyFactory.lineWidth(7f),
+                    PropertyFactory.lineOpacity(0.85f)
+                )
+            }
+
+            // Route core layer: summit-recorded-route
+            val coreId = "summit-recorded-route"
+            if (style.getLayer(coreId) == null) {
+                val coreLayer = LineLayer(coreId, sourceId)
+                coreLayer.setProperties(
+                    PropertyFactory.lineColor("#FF6D00"),
+                    PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineOpacity(1.0f),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                )
+                style.addLayerAbove(coreLayer, casingId)
+            } else {
+                style.getLayer(coreId)?.setProperties(
+                    PropertyFactory.lineColor("#FF6D00"),
+                    PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineOpacity(1.0f)
+                )
+            }
+        } else {
+            style.removeLayer("summit-recorded-route")
+            style.removeLayer("summit-recorded-route-casing")
+            style.removeSource("summit-recorded-route-source")
+        }
+
+        // Hillshading overlay for TERRAIN_3D mode
+        if (viewMode == MapViewMode.TERRAIN_3D) {
+            val hillshadeSourceId = "maptiler-hillshade-source"
+            if (style.getSource(hillshadeSourceId) == null) {
+                val key = BuildConfig.MAPTILER_API_KEY
+                if (!key.isNullOrEmpty() && key != "placeholder_maptiler_key") {
+                    val demUrl = "https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=$key"
+                    val demSource = com.mapbox.mapboxsdk.style.sources.RasterDemSource(hillshadeSourceId, demUrl)
+                    style.addSource(demSource)
+
+                    val hillshadeLayer = com.mapbox.mapboxsdk.style.layers.HillshadeLayer("summit-hillshade-layer", hillshadeSourceId)
+                    hillshadeLayer.setProperties(
+                        PropertyFactory.hillshadeShadowColor("#0B0F19"),
+                        PropertyFactory.hillshadeHighlightColor("#FFFFFF"),
+                        PropertyFactory.hillshadeIlluminationAnchor(Property.HILLSHADE_ILLUMINATION_ANCHOR_MAP),
+                        PropertyFactory.hillshadeExaggeration(0.85f)
+                    )
+                    
+                    if (style.getLayer("summit-recorded-route-casing") != null) {
+                        style.addLayerBelow(hillshadeLayer, "summit-recorded-route-casing")
+                    } else {
+                        style.addLayer(hillshadeLayer)
+                    }
+                }
+            }
+        } else {
+            style.removeLayer("summit-hillshade-layer")
+            style.removeSource("maptiler-hillshade-source")
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("SummitOutdoorMap", "Error updating route and layers: ${e.message}", e)
     }
 }
