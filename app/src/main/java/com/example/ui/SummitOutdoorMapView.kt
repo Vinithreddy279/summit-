@@ -223,21 +223,20 @@ fun applyStyleForMode(style: Style, mode: OutdoorMapMode) {
                         has("color")
                     )
                 )
-                val hikeLayer = LineLayer("summit-hike-emphasis", "outdoor").apply {
-                    sourceLayer = "trail"
-                    setFilter(filter)
-                    setProperties(
-                        PropertyFactory.lineColor("#E65100"), // Vibrant Orange
-                        PropertyFactory.lineWidth(4f),
-                        PropertyFactory.lineOpacity(0.9f)
-                    )
-                }
+                val hikeLayer = LineLayer("summit-hike-emphasis", "outdoor")
+                    .withSourceLayer("trail")
+                    .withFilter(filter)
+                hikeLayer.setProperties(
+                    PropertyFactory.lineColor("#E65100"), // Vibrant Orange
+                    PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineOpacity(0.9f)
+                )
                 if (style.getLayer("Road labels") != null) {
                     style.addLayerBelow(hikeLayer, "Road labels")
                 } else {
                     style.addLayer(hikeLayer)
                 }
-                android.util.Log.d("SummitOutdoorMap", "HIKE: Applied summit-hike-emphasis overlay.")
+                android.util.Log.d("SummitOutdoorMap", "HIKE: Applied summit-hike-emphasis overlay on trail with source-layer trail.")
             }
             OutdoorMapMode.TREK -> {
                 // Focus: wilderness trails and via_ferrata, or iwn/nwn routes
@@ -250,15 +249,14 @@ fun applyStyleForMode(style: Style, mode: OutdoorMapMode) {
                         eq(get("network"), "nwn")
                     )
                 )
-                val trekLayer = LineLayer("summit-trek-emphasis", "outdoor").apply {
-                    sourceLayer = "trail"
-                    setFilter(filter)
-                    setProperties(
-                        PropertyFactory.lineColor("#D84315"), // Deep Red-Orange
-                        PropertyFactory.lineWidth(4.5f),
-                        PropertyFactory.lineOpacity(0.95f)
-                    )
-                }
+                val trekLayer = LineLayer("summit-trek-emphasis", "outdoor")
+                    .withSourceLayer("trail")
+                    .withFilter(filter)
+                trekLayer.setProperties(
+                    PropertyFactory.lineColor("#D84315"), // Deep Red-Orange
+                    PropertyFactory.lineWidth(4.5f),
+                    PropertyFactory.lineOpacity(0.95f)
+                )
                 if (style.getLayer("Road labels") != null) {
                     style.addLayerBelow(trekLayer, "Road labels")
                 } else {
@@ -294,15 +292,14 @@ fun applyStyleForMode(style: Style, mode: OutdoorMapMode) {
                         eq(get("network"), "ncn")
                     )
                 )
-                val cycleLayer = LineLayer("summit-cycle-emphasis", "outdoor").apply {
-                    sourceLayer = "trail"
-                    setFilter(filter)
-                    setProperties(
-                        PropertyFactory.lineColor("#00E676"), // Bright Green
-                        PropertyFactory.lineWidth(4f),
-                        PropertyFactory.lineOpacity(0.9f)
-                    )
-                }
+                val cycleLayer = LineLayer("summit-cycle-emphasis", "outdoor")
+                    .withSourceLayer("trail")
+                    .withFilter(filter)
+                cycleLayer.setProperties(
+                    PropertyFactory.lineColor("#00E676"), // Bright Green
+                    PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineOpacity(0.9f)
+                )
                 if (style.getLayer("Road labels") != null) {
                     style.addLayerBelow(cycleLayer, "Road labels")
                 } else {
@@ -319,15 +316,14 @@ fun applyStyleForMode(style: Style, mode: OutdoorMapMode) {
                         eq(get("class"), "pedestrian")
                     )
                 )
-                val runLayer = LineLayer("summit-run-emphasis", "maptiler_planet").apply {
-                    sourceLayer = "transportation"
-                    setFilter(filter)
-                    setProperties(
-                        PropertyFactory.lineColor("#00B0FF"), // Electric Blue
-                        PropertyFactory.lineWidth(4f),
-                        PropertyFactory.lineOpacity(0.9f)
-                    )
-                }
+                val runLayer = LineLayer("summit-run-emphasis", "maptiler_planet")
+                    .withSourceLayer("transportation")
+                    .withFilter(filter)
+                runLayer.setProperties(
+                    PropertyFactory.lineColor("#00B0FF"), // Electric Blue
+                    PropertyFactory.lineWidth(4f),
+                    PropertyFactory.lineOpacity(0.9f)
+                )
                 if (style.getLayer("Road labels") != null) {
                     style.addLayerBelow(runLayer, "Road labels")
                 } else {
@@ -342,18 +338,17 @@ fun applyStyleForMode(style: Style, mode: OutdoorMapMode) {
                     any(
                         eq(get("class"), "path"),
                         eq(get("class"), "pedestrian"),
-                        eq(get("class"), "steps")
+                        eq(get("subclass"), "steps")
                     )
                 )
-                val walkLayer = LineLayer("summit-walk-emphasis", "maptiler_planet").apply {
-                    sourceLayer = "transportation"
-                    setFilter(filter)
-                    setProperties(
-                        PropertyFactory.lineColor("#8E24AA"), // Vibrant Purple
-                        PropertyFactory.lineWidth(3.5f),
-                        PropertyFactory.lineOpacity(0.85f)
-                    )
-                }
+                val walkLayer = LineLayer("summit-walk-emphasis", "maptiler_planet")
+                    .withSourceLayer("transportation")
+                    .withFilter(filter)
+                walkLayer.setProperties(
+                    PropertyFactory.lineColor("#8E24AA"), // Vibrant Purple
+                    PropertyFactory.lineWidth(3.5f),
+                    PropertyFactory.lineOpacity(0.85f)
+                )
                 if (style.getLayer("Road labels") != null) {
                     style.addLayerBelow(walkLayer, "Road labels")
                 } else {
