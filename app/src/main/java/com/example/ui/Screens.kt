@@ -4476,6 +4476,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
     val gears by viewModel.gears.collectAsStateWithLifecycle()
     val selectedGearId by viewModel.recordingGearId.collectAsStateWithLifecycle()
     val trackpoints by viewModel.recordingTrackpoints.collectAsStateWithLifecycle()
+    val throttledTrackpoints by viewModel.throttledTrackpoints.collectAsStateWithLifecycle()
     val selectedSimulationRoute by viewModel.selectedSimulationRoute.collectAsStateWithLifecycle()
 
     val currentSpeedKmh by TrackingService.currentSpeedKmh.collectAsStateWithLifecycle()
@@ -5025,7 +5026,7 @@ fun RecordScreen(viewModel: SummitViewModel) {
                     .border(1.dp, SlateCardSurfaceVariant, RoundedCornerShape(20.dp))
             ) {
                 SummitOutdoorMapView(
-                    points = trackpoints,
+                    points = throttledTrackpoints,
                     isLiveTracking = isRecording,
                     sportType = sportType,
                     modifier = Modifier.fillMaxSize()

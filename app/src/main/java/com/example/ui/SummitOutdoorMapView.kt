@@ -946,59 +946,84 @@ private fun updateRouteAndLayers(
         val hasMovement = safePoints.size >= 2 && hasMeaningfulMovement(safePoints)
         
         if (hasMovement) {
-            val mapPoints = safePoints.map { LatLng(it.lat, it.lng) }
-            val mapboxPoints = mapPoints.map { com.mapbox.geojson.Point.fromLngLat(it.longitude, it.latitude) }
-            val lineString = com.mapbox.geojson.LineString.fromLngLats(mapboxPoints)
-            val feature = com.mapbox.geojson.Feature.fromGeometry(lineString)
-            val featureCollection = com.mapbox.geojson.FeatureCollection.fromFeature(feature)
-
-            val sourceId = "summit-recorded-route-source"
-            var source = style.getSourceAs<com.mapbox.mapboxsdk.style.sources.GeoJsonSource>(sourceId)
-            if (source == null) {
-                source = com.mapbox.mapboxsdk.style.sources.GeoJsonSource(sourceId, featureCollection)
-                style.addSource(source)
-            } else {
-                source.setGeoJson(featureCollection)
+            val segments = mutableListOf<MutableList<com.mapbox.geojson.Point>>()
+            var currentSegment = mutableListOf<com.mapbox.geojson.Point>()
+            
+            safePoints.forEach { pt ->
+                if (pt.segmentStart) {
+                    if (currentSegment.size >= 2) {
+                        segments.add(currentSegment)
+                    }
+                    currentSegment = mutableListOf()
+                }
+                currentSegment.add(com.mapbox.geojson.Point.fromLngLat(pt.lng, pt.lat))
+            }
+            if (currentSegment.size >= 2) {
+                segments.add(currentSegment)
             }
 
-            // Route casing layer: summit-recorded-route-casing
-            val casingId = "summit-recorded-route-casing"
-            if (style.getLayer(casingId) == null) {
-                val casingLayer = LineLayer(casingId, sourceId)
-                casingLayer.setProperties(
-                    PropertyFactory.lineColor("#1E293B"),
-                    PropertyFactory.lineWidth(7f),
-                    PropertyFactory.lineOpacity(0.85f),
-                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-                )
-                style.addLayer(casingLayer)
+            val featureCollection = if (segments.isNotEmpty()) {
+                val lineStrings = segments.map { com.mapbox.geojson.LineString.fromLngLats(it) }
+                val multiLineString = com.mapbox.geojson.MultiLineString.fromLineStrings(lineStrings)
+                val feature = com.mapbox.geojson.Feature.fromGeometry(multiLineString)
+                com.mapbox.geojson.FeatureCollection.fromFeature(feature)
             } else {
-                style.getLayer(casingId)?.setProperties(
-                    PropertyFactory.lineColor("#1E293B"),
-                    PropertyFactory.lineWidth(7f),
-                    PropertyFactory.lineOpacity(0.85f)
-                )
+                null
             }
 
-            // Route core layer: summit-recorded-route
-            val coreId = "summit-recorded-route"
-            if (style.getLayer(coreId) == null) {
-                val coreLayer = LineLayer(coreId, sourceId)
-                coreLayer.setProperties(
-                    PropertyFactory.lineColor("#FF6D00"),
-                    PropertyFactory.lineWidth(4f),
-                    PropertyFactory.lineOpacity(1.0f),
-                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
-                    PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
-                )
-                style.addLayerAbove(coreLayer, casingId)
+            if (featureCollection != null) {
+                val sourceId = "summit-recorded-route-source"
+                var source = style.getSourceAs<com.mapbox.mapboxsdk.style.sources.GeoJsonSource>(sourceId)
+                if (source == null) {
+                    source = com.mapbox.mapboxsdk.style.sources.GeoJsonSource(sourceId, featureCollection)
+                    style.addSource(source)
+                } else {
+                    source.setGeoJson(featureCollection)
+                }
+
+                // Route casing layer: summit-recorded-route-casing
+                val casingId = "summit-recorded-route-casing"
+                if (style.getLayer(casingId) == null) {
+                    val casingLayer = LineLayer(casingId, sourceId)
+                    casingLayer.setProperties(
+                        PropertyFactory.lineColor("#1E293B"),
+                        PropertyFactory.lineWidth(7f),
+                        PropertyFactory.lineOpacity(0.85f),
+                        PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                        PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                    )
+                    style.addLayer(casingLayer)
+                } else {
+                    style.getLayer(casingId)?.setProperties(
+                        PropertyFactory.lineColor("#1E293B"),
+                        PropertyFactory.lineWidth(7f),
+                        PropertyFactory.lineOpacity(0.85f)
+                    )
+                }
+
+                // Route core layer: summit-recorded-route
+                val coreId = "summit-recorded-route"
+                if (style.getLayer(coreId) == null) {
+                    val coreLayer = LineLayer(coreId, sourceId)
+                    coreLayer.setProperties(
+                        PropertyFactory.lineColor("#FF6D00"),
+                        PropertyFactory.lineWidth(4f),
+                        PropertyFactory.lineOpacity(1.0f),
+                        PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                        PropertyFactory.lineJoin(Property.LINE_JOIN_ROUND)
+                    )
+                    style.addLayerAbove(coreLayer, casingId)
+                } else {
+                    style.getLayer(coreId)?.setProperties(
+                        PropertyFactory.lineColor("#FF6D00"),
+                        PropertyFactory.lineWidth(4f),
+                        PropertyFactory.lineOpacity(1.0f)
+                    )
+                }
             } else {
-                style.getLayer(coreId)?.setProperties(
-                    PropertyFactory.lineColor("#FF6D00"),
-                    PropertyFactory.lineWidth(4f),
-                    PropertyFactory.lineOpacity(1.0f)
-                )
+                style.removeLayer("summit-recorded-route")
+                style.removeLayer("summit-recorded-route-casing")
+                style.removeSource("summit-recorded-route-source")
             }
         } else {
             style.removeLayer("summit-recorded-route")

@@ -9,7 +9,8 @@ data class GPSPoint(
     val elevation: Double = 0.0,
     val timeMs: Long = 0,
     val speedMps: Double = 0.0,
-    val hasElevation: Boolean = true
+    val hasElevation: Boolean = true,
+    val segmentStart: Boolean = false
 ) : Serializable {
     val latlng: Pair<Double, Double> get() = Pair(lat, lng)
 }
@@ -19,7 +20,7 @@ object JsonHelper {
         return buildString {
             append("[")
             points.forEachIndexed { idx, p ->
-                append("""{"lat":${p.lat},"lng":${p.lng},"ele":${p.elevation},"t":${p.timeMs},"s":${p.speedMps},"hasEle":${p.hasElevation}}""")
+                append("""{"lat":${p.lat},"lng":${p.lng},"ele":${p.elevation},"t":${p.timeMs},"s":${p.speedMps},"hasEle":${p.hasElevation},"segStart":${p.segmentStart}}""")
                 if (idx < points.size - 1) append(",")
             }
             append("]")
@@ -30,8 +31,8 @@ object JsonHelper {
         if (json.isEmpty() || json == "[]") return emptyList()
         val list = mutableListOf<GPSPoint>()
         try {
-            // Match fields lat, lng, ele, t, s, and optional hasEle
-            val pattern = """\{"lat":\s*([0-9\.\-]+)\s*,\s*"lng":\s*([0-9\.\-]+)\s*,\s*"ele":\s*([0-9\.\-]+)\s*,\s*"t":\s*([0-9\-]+)\s*,\s*"s":\s*([0-9\.\-]+)\s*(?:,\s*"hasEle":\s*(true|false))?\s*\}""".toRegex()
+            // Match fields lat, lng, ele, t, s, optional hasEle, optional segStart
+            val pattern = """\{"lat":\s*([0-9\.\-]+)\s*,\s*"lng":\s*([0-9\.\-]+)\s*,\s*"ele":\s*([0-9\.\-]+)\s*,\s*"t":\s*([0-9\-]+)\s*,\s*"s":\s*([0-9\.\-]+)\s*(?:,\s*"hasEle":\s*(true|false))?\s*(?:,\s*"segStart":\s*(true|false))?\s*\}""".toRegex()
             val matches = pattern.findAll(json)
             for (match in matches) {
                 val lat = match.groupValues[1].toDoubleOrNull() ?: 0.0
@@ -44,7 +45,12 @@ object JsonHelper {
                 } else {
                     true
                 }
-                list.add(GPSPoint(lat = lat, lng = lng, elevation = ele, timeMs = t, speedMps = s, hasElevation = hasEle))
+                val segStart = if (match.groupValues.size >= 8 && match.groupValues[7].isNotEmpty()) {
+                    match.groupValues[7] == "true"
+                } else {
+                    false
+                }
+                list.add(GPSPoint(lat = lat, lng = lng, elevation = ele, timeMs = t, speedMps = s, hasElevation = hasEle, segmentStart = segStart))
             }
         } catch (e: Exception) {
             e.printStackTrace()

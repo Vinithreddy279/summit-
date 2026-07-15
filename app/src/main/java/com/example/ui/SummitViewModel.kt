@@ -460,6 +460,9 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
     private val _recordingTrackpoints = MutableStateFlow<List<GPSPoint>>(emptyList())
     val recordingTrackpoints: StateFlow<List<GPSPoint>> = _recordingTrackpoints.asStateFlow()
 
+    private val _throttledTrackpoints = MutableStateFlow<List<GPSPoint>>(emptyList())
+    val throttledTrackpoints: StateFlow<List<GPSPoint>> = _throttledTrackpoints.asStateFlow()
+
     private val _selectedSimulationRoute = MutableStateFlow<String?>("None")
     val selectedSimulationRoute: StateFlow<String?> = _selectedSimulationRoute.asStateFlow()
 
@@ -572,9 +575,17 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
                 _recordingDistanceKm.value = it
             }
         }
+        var lastEmitTime = 0L
         viewModelScope.launch {
-            TrackingService.trackpoints.collect {
-                _recordingTrackpoints.value = it
+            TrackingService.trackpoints.collect { points ->
+                _recordingTrackpoints.value = points
+                
+                val now = System.currentTimeMillis()
+                if (now - lastEmitTime >= 2000L || points.isEmpty() || points.size <= 2) {
+                    _throttledTrackpoints.value = points
+                    lastEmitTime = now
+                    TrackingService.liveMapRouteEmissionCount++
+                }
             }
         }
         viewModelScope.launch {
@@ -1076,20 +1087,9 @@ class SummitViewModel(application: Application) : AndroidViewModel(application) 
         val avgSpeed = (distance / (duration / 3600.0))
         val maxSpeed = avgSpeed * 1.3 // estimated max speed
 
-        // Calculate elevation gain
-        var hasElevationData = false
-        var eleGain = 0.0
-        for (i in 0 until points.size - 1) {
-            val p1 = points[i]
-            val p2 = points[i + 1]
-            if (p1.hasElevation && p2.hasElevation) {
-                hasElevationData = true
-                val diff = p2.elevation - p1.elevation
-                if (diff > 0.0) {
-                    eleGain += diff
-                }
-            }
-        }
+        // Get the smoothed real-time elevation gain accumulated in TrackingService
+        val eleGain = TrackingService.elevationGainM.value
+        val hasElevationData = points.any { it.hasElevation }
 
         val activity = Activity(
             title = when (_selectedSimulationRoute.value) {
