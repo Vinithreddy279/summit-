@@ -35,20 +35,6 @@ The app is built using modern Android development practices including Jetpack Co
 - 🎨 Modern Material 3 user interface
 
 
-
-## 📱 Screenshots
-## 📱 Screenshots
-
-<p align="center">
-  <img src="home.png" alt="Home" width="220"/>
-  <img src="weather.png" alt="Weather" width="220"/>
-</p>
-
-<p align="center">
-  <img src="map.png" alt="Live Tracking" width="220"/>
-  <img src="tracking.png" alt="Activity History" width="220"/>
-</p>
-
 ##
  ## 🛠 Tech Stack
 
