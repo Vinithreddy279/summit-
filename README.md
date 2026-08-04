@@ -99,8 +99,6 @@ View your app in AI Studio: https://ai.studio/apps/4ad05929-2644-42af-9d62-e0bb9
 
 ## Run Locally
 ## 👨‍💻 Developer
-
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
 **Vinith Reddy**
 
 🌐 Portfolio  
