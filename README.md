@@ -91,12 +91,6 @@ UI (Jetpack Compose)
 This contains everything you need to run your app locally.
 ### Planned
 
-View your app in AI Studio: https://ai.studio/apps/4ad05929-2644-42af-9d62-e0bb9c3d7abc
-- [ ] Cloud Sync
-- [ ] Wear OS Support
-- [ ] AI Coach
-- [ ] Social Sharing
-
 ## Run Locally
 ## 👨‍💻 Developer
 **Vinith Reddy**
