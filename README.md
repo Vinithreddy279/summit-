@@ -97,5 +97,6 @@ This contains everything you need to run your app locally.
 
 🌐 Portfolio  
 https://vinithreddy.vercel.app
+
 💻 GitHub  
 https://github.com/Vinithreddy279
